@@ -5,6 +5,18 @@ go:
   - 1.10.x
   - tip
 
+addons:
+  apt:
+    packages:
+      - google-cloud-sdk
+
+env:
+  - ISSUER="http://localhost:8080"
+  - DATABASE_URL="datastore://hydra-gcp-test?namspace=hydra"
+  - SYSTEM_SECRET="notsosecretnotsosecretnotsosecret"
+  - CONSENT_URL="http://localhost:8080/consent"
+  - FORCE_ROOT_CLIENT_CREDENTIALS= "admin:password"
+
 before_install:
   - go get github.com/mattn/goveralls
   - go get github.com/alecthomas/gometalinter
@@ -12,6 +24,10 @@ before_install:
 install:
   - $HOME/gopath/bin/gometalinter --install
   - make get
+
+before_script:
+  - gcloud beta emulators datastore start &
+  - $(gcloud beta emulators datastore env-init)
 
 script:
   - $GOPATH/bin/goveralls -service=travis-ci

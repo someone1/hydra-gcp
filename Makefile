@@ -13,10 +13,10 @@ lint:
 	fi
 
 get:
-  go get -v -t -d ./...
-  git -C $GOPATH/src/github.com/square/go-jose/ checkout --track origin/v2
-  go get -d -v -u github.com/square/go-jose
-  git -C $GOPATH/src/github.com/segmentio/analytics-go/ checkout --track origin/v3.0
+	go get -v -t -d -u ./...
+	git -C $GOPATH/src/github.com/square/go-jose/ checkout --track origin/v2
+	go get -d -v -u github.com/square/go-jose
+	git -C $GOPATH/src/github.com/segmentio/analytics-go/ checkout --track origin/v3.0
 
 test:
 	go test ./...
