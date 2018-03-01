@@ -1,4 +1,4 @@
-# Hydra for GCP - WORK IN PROGRESS
+# Hydra for GCP - WORK IN PROGRESS [![Go Report Card](https://goreportcard.com/badge/github.com/someone1/hydra-gcp)](https://goreportcard.com/report/github.com/someone1/hydra-gcp) [![Build Status](https://travis-ci.org/someone1/hydra-gcp.svg?branch=master)](https://travis-ci.org/someone1/hydra-gcp) [![Coverage Status](https://coveralls.io/repos/github/someone1/hydra-gcp/badge.svg?branch=master)](https://coveralls.io/github/someone1/hydra-gcp?branch=master)
 
 ## Important Notes (READ FIRST!)
 

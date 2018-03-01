@@ -45,7 +45,7 @@ func NewDatastoreConnection(ctx context.Context, URL *url.URL, l logrus.FieldLog
 	}
 }
 
-// Client will initalize and return a datastore.Client on first call and return the same datastore.Client on subseqeunt calls.
+// Client will initialize and return a datastore.Client on first call and return the same datastore.Client on subseqeunt calls.
 func (d *DatastoreConnection) Client() *datastore.Client {
 	if d.client != nil {
 		return d.client

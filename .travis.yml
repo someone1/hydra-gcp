@@ -1,0 +1,24 @@
+language: go
+sudo: false
+go:
+  - 1.9.x
+  - 1.10.x
+  - tip
+
+before_install:
+  - go get github.com/mattn/goveralls
+  - go get github.com/alecthomas/gometalinter
+
+install:
+  - go get -v -t -d ./...
+  - git -C $HOME/gopath/src/github.com/square/go-jose/ checkout --track origin/v2
+  - go get -d -v -u github.com/square/go-jose
+  - git -C $HOME/gopath/src/github.com/segmentio/analytics-go/ checkout --track origin/v3.0
+
+script:
+  - $GOPATH/bin/goveralls -service=travis-ci
+  - go test ./...
+  - go test -race ./...
+  - @if [ "`go vet ./... | tee /dev/stderr`" ]; then exit 1; fi
+  - @for d in $(DIRS) ; do if [ "`gofmt -s -l $$d/*.go | tee /dev/stderr`" ]; then exit 1; fi done
+  - go build -o app -tags appenginevm .
