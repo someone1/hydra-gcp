@@ -30,7 +30,7 @@ import (
 	"github.com/ory/hydra/pkg"
 	"github.com/ory/hydra/warden"
 
-	foauth2 "github.com/someone1/forsite-gcp-oauth2"
+	foauth2 "github.com/someone1/fosite-gcp-oauth2"
 	dconfig "github.com/someone1/hydra-gcp/config"
 	doauth2 "github.com/someone1/hydra-gcp/oauth2"
 )

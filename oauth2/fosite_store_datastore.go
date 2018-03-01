@@ -106,7 +106,7 @@ func (h *hydraOauth2Data) Save() ([]datastore.Property, error) {
 	return datastore.SaveStruct(h)
 }
 
-// FositeDatastoreStore is a Google Datastore implementation for pkg.ForsiteStorer to store policies persistently.
+// FositeDatastoreStore is a Google Datastore implementation for pkg.FositeStorer to store policies persistently.
 type FositeDatastoreStore struct {
 	client.Manager
 	L                   logrus.FieldLogger
