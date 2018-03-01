@@ -5,10 +5,13 @@ go:
   - 1.10.x
   - tip
 
-addons:
-  apt:
-    packages:
-      - google-cloud-sdk
+# Waiting on https://github.com/travis-ci/apt-source-whitelist/pull/346 before this will work
+# addons:
+#   apt:
+#     sources:
+#       - google-cloud
+#     packages:
+#       - google-cloud-sdk
 
 env:
   - ISSUER="http://localhost:8080" DATABASE_URL="datastore://hydra-gcp-test?namspace=hydra" SYSTEM_SECRET="notsosecretnotsosecretnotsosecret" CONSENT_URL="http://localhost:8080/consent" FORCE_ROOT_CLIENT_CREDENTIALS= "admin:password"
@@ -19,6 +22,8 @@ before_install:
 
 install:
   - $HOME/gopath/bin/gometalinter --install
+  - curl https://sdk.cloud.google.com | bash --disable-prompts
+  - gcloud components install cloud-datastore-emulator
   - make get
 
 before_script:
