@@ -11,11 +11,7 @@ addons:
       - google-cloud-sdk
 
 env:
-  - ISSUER="http://localhost:8080"
-  - DATABASE_URL="datastore://hydra-gcp-test?namspace=hydra"
-  - SYSTEM_SECRET="notsosecretnotsosecretnotsosecret"
-  - CONSENT_URL="http://localhost:8080/consent"
-  - FORCE_ROOT_CLIENT_CREDENTIALS= "admin:password"
+  - ISSUER="http://localhost:8080" DATABASE_URL="datastore://hydra-gcp-test?namspace=hydra" SYSTEM_SECRET="notsosecretnotsosecretnotsosecret" CONSENT_URL="http://localhost:8080/consent" FORCE_ROOT_CLIENT_CREDENTIALS= "admin:password"
 
 before_install:
   - go get github.com/mattn/goveralls
