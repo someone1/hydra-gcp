@@ -1,0 +1,278 @@
+/*
+ * Copyright © 2018 Prateek Malhotra <someone1@gmail.com>
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ *
+ * Based on https://github.com/ory/hydra/blob/master/client/manager_sql.go
+ */
+
+package client
+
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	"cloud.google.com/go/datastore"
+	"github.com/ory/fosite"
+	"github.com/ory/hydra/client"
+	"github.com/ory/hydra/pkg"
+	"github.com/pborman/uuid"
+	"github.com/pkg/errors"
+)
+
+const (
+	hydraClientKind    = "HydraClient"
+	hydraClientVersion = 1
+)
+
+type clientData struct {
+	Key               *datastore.Key `datastore:"-"`
+	ID                string         `datastore:"-"`
+	Name              string         `datastore:"cn"`
+	Secret            string         `datastore:"cs"`
+	RedirectURIs      string         `datastore:"ruris"`
+	GrantTypes        string         `datastore:"gt"`
+	ResponseTypes     string         `datastore:"rt"`
+	Scope             string         `datastore:"scp"`
+	Owner             string         `datastore:"owner"`
+	PolicyURI         string         `datastore:"puri"`
+	TermsOfServiceURI string         `datastore:"turi"`
+	ClientURI         string         `datastore:"curi"`
+	LogoURI           string         `datastore:"luri"`
+	Contacts          string         `datastore:"conts"`
+	Version           int            `datastore:"v"`
+	Public            bool           `datastore:"pub"`
+
+	update bool
+}
+
+// LoadKey is implemented for the KeyLoader interface
+func (c *clientData) LoadKey(k *datastore.Key) error {
+	c.Key = k
+	c.ID = k.Name
+
+	return nil
+}
+
+// Load is implemented for the PropertyLoadSaver interface, and performs schema migration if necessary
+func (c *clientData) Load(ps []datastore.Property) error {
+	err := datastore.LoadStruct(c, ps)
+	if _, ok := err.(*datastore.ErrFieldMismatch); err != nil && !ok {
+		return errors.WithStack(err)
+	}
+
+	switch c.Version {
+	case hydraClientVersion:
+		// Up to date, nothing to do
+		break
+	// case 1:
+	// 	// Update to version 2 here
+	// 	fallthrough
+	// case 2:
+	// 	//update to version 3 here
+	// 	fallthrough
+	case -1:
+		// This is here to complete saving the entity should we need to udpate it
+		if c.Version == -1 {
+			return errors.New(fmt.Sprintf("unexpectedly got to version update trigger with incorrect version -1"))
+		}
+		c.Version = hydraClientVersion
+		c.update = true
+	default:
+		return errors.New(fmt.Sprintf("got unexpected version %d when loading entity", c.Version))
+	}
+	return nil
+}
+
+// Save is implemented for the PropertyLoadSaver interface
+func (c *clientData) Save() ([]datastore.Property, error) {
+	c.Version = hydraClientVersion
+	return datastore.SaveStruct(c)
+}
+
+// DatastoreManager is a Google Datastore implementation for client.Manager.
+type DatastoreManager struct {
+	hasher    fosite.Hasher
+	client    *datastore.Client
+	context   context.Context
+	namespace string
+}
+
+// NewDatastoreManager initializes a new DatastoreManager with the given client
+func NewDatastoreManager(ctx context.Context, client *datastore.Client, namespace string, h fosite.Hasher) *DatastoreManager {
+	return &DatastoreManager{
+		hasher:    h,
+		client:    client,
+		context:   ctx,
+		namespace: namespace,
+	}
+}
+
+func (d *DatastoreManager) createClientKey(id string) *datastore.Key {
+	key := datastore.NameKey(hydraClientKind, id, nil)
+	key.Namespace = d.namespace
+	return key
+}
+
+func clientDataFromClient(d *client.Client) *clientData {
+	return &clientData{
+		ID:                d.ID,
+		Name:              d.Name,
+		Secret:            d.Secret,
+		RedirectURIs:      strings.Join(d.RedirectURIs, "|"),
+		GrantTypes:        strings.Join(d.GrantTypes, "|"),
+		ResponseTypes:     strings.Join(d.ResponseTypes, "|"),
+		Scope:             d.Scope,
+		Owner:             d.Owner,
+		PolicyURI:         d.PolicyURI,
+		TermsOfServiceURI: d.TermsOfServiceURI,
+		ClientURI:         d.ClientURI,
+		LogoURI:           d.LogoURI,
+		Contacts:          strings.Join(d.Contacts, "|"),
+		Public:            d.Public,
+	}
+}
+
+func (c *clientData) toClient() *client.Client {
+	return &client.Client{
+		ID:                c.ID,
+		Name:              c.Name,
+		Secret:            c.Secret,
+		RedirectURIs:      pkg.SplitNonEmpty(c.RedirectURIs, "|"),
+		GrantTypes:        pkg.SplitNonEmpty(c.GrantTypes, "|"),
+		ResponseTypes:     pkg.SplitNonEmpty(c.ResponseTypes, "|"),
+		Scope:             c.Scope,
+		Owner:             c.Owner,
+		PolicyURI:         c.PolicyURI,
+		TermsOfServiceURI: c.TermsOfServiceURI,
+		ClientURI:         c.ClientURI,
+		LogoURI:           c.LogoURI,
+		Contacts:          pkg.SplitNonEmpty(c.Contacts, "|"),
+		Public:            c.Public,
+	}
+}
+
+func (d *DatastoreManager) GetConcreteClient(id string) (*client.Client, error) {
+	var cd clientData
+	key := d.createClientKey(id)
+
+	if err := d.client.Get(d.context, key, &cd); err == datastore.ErrNoSuchEntity {
+		return nil, errors.WithStack(pkg.ErrNotFound)
+	} else if err != nil {
+		return nil, errors.WithStack(err)
+	}
+
+	if cd.update {
+		mutation := datastore.NewUpdate(key, &cd)
+		if _, err := d.client.Mutate(d.context, mutation); err != nil {
+			return nil, errors.WithStack(err)
+		}
+		cd.update = false
+	}
+
+	return cd.toClient(), nil
+}
+
+func (d *DatastoreManager) GetClient(_ context.Context, id string) (fosite.Client, error) {
+	return d.GetConcreteClient(id)
+}
+
+func (d *DatastoreManager) UpdateClient(c *client.Client) error {
+	o, err := d.GetClient(d.context, c.ID)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+
+	if c.Secret == "" {
+		c.Secret = string(o.GetHashedSecret())
+	} else {
+		h, err := d.hasher.Hash([]byte(c.Secret))
+		if err != nil {
+			return errors.WithStack(err)
+		}
+		c.Secret = string(h)
+	}
+
+	s := clientDataFromClient(c)
+	key := d.createClientKey(s.ID)
+	mutation := datastore.NewUpdate(key, s)
+
+	if _, err := d.client.Mutate(d.context, mutation); err != nil {
+		return errors.WithStack(err)
+	}
+	return nil
+}
+
+func (d *DatastoreManager) Authenticate(id string, secret []byte) (*client.Client, error) {
+	c, err := d.GetConcreteClient(id)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+
+	if err := d.hasher.Compare(c.GetHashedSecret(), secret); err != nil {
+		return nil, errors.WithStack(err)
+	}
+
+	return c, nil
+}
+
+func (d *DatastoreManager) CreateClient(c *client.Client) error {
+	if c.ID == "" {
+		c.ID = uuid.New()
+	}
+
+	h, err := d.hasher.Hash([]byte(c.Secret))
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	c.Secret = string(h)
+
+	data := clientDataFromClient(c)
+	key := d.createClientKey(data.ID)
+	mutation := datastore.NewInsert(key, data)
+
+	if _, err := d.client.Mutate(d.context, mutation); err != nil {
+		return errors.WithStack(err)
+	}
+	return nil
+}
+
+func (d *DatastoreManager) DeleteClient(id string) error {
+	key := d.createClientKey(id)
+	if err := d.client.Delete(d.context, key); err != nil {
+		return errors.WithStack(err)
+	}
+	return nil
+}
+
+func (d *DatastoreManager) GetClients(limit, offset int) (clients map[string]client.Client, err error) {
+	datas := make([]clientData, 0)
+	clients = make(map[string]client.Client)
+
+	query := datastore.NewQuery(hydraClientKind).Order("__key__").Limit(limit).Offset(offset).Namespace(d.namespace)
+
+	if _, err := d.client.GetAll(d.context, query, &datas); err != nil {
+		return nil, errors.WithStack(err)
+	}
+
+	for _, k := range datas {
+		clients[k.ID] = *k.toClient()
+	}
+	return clients, nil
+}
+
+func consenttypecheck() {
+	var _ client.Manager = (*DatastoreManager)(nil)
+}
