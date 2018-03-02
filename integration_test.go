@@ -55,19 +55,14 @@ func generateGCPHydraHandler(t *testing.T) http.Handler {
 	if err != nil {
 		t.Fatalf("could not get jwt config: %v", err)
 	}
-
-	ctx := gcp_jwt.NewContextJWT(context.Background(), &gcp_jwt.IAMSignJWTConfig{ServiceAccount: jwtConfig.Email})
+	ctx := context.WithValue(context.Background(), goauth2.HTTPClient, http.DefaultClient)
+	ctx = gcp_jwt.NewContextJWT(ctx, &gcp_jwt.IAMSignJWTConfig{ServiceAccount: jwtConfig.Email})
 
 	return GenerateHydraHandler(ctx, c, false, cors.Options{})
 }
 
-func TestIntegration(t *testing.T) {
-	hydra := generateGCPHydraHandler(t)
-	ts := httptest.NewTLSServer(hydra)
-	defer ts.Close()
-	client := ts.Client()
-	ctx := context.WithValue(context.Background(), goauth2.HTTPClient, client)
-
+func getHydraSDKClient(t *testing.T, basePath string, client *http.Client) *sdk.CodeGenSDK {
+	t.Helper()
 	forcedCreds := os.Getenv("FORCE_ROOT_CLIENT_CREDENTIALS")
 	credsParts := strings.Split(forcedCreds, ":")
 	if len(credsParts) != 2 {
@@ -76,7 +71,7 @@ func TestIntegration(t *testing.T) {
 
 	// Let's get Hydra SDK
 	hydraConfig := &sdk.Configuration{
-		EndpointURL:  ts.URL,
+		EndpointURL:  basePath,
 		ClientID:     credsParts[0],
 		ClientSecret: credsParts[1],
 	}
@@ -84,7 +79,22 @@ func TestIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("could not get hydra sdk client: %v", err)
 	}
+	hydraClient.OAuth2Api.Configuration.Transport = client.Transport
+	hydraClient.JsonWebKeyApi.Configuration.Transport = client.Transport
+	hydraClient.WardenApi.Configuration.Transport = client.Transport
+	hydraClient.PolicyApi.Configuration.Transport = client.Transport
+	return hydraClient
+}
+
+func TestIntegration(t *testing.T) {
+	hydra := generateGCPHydraHandler(t)
+	ts := httptest.NewTLSServer(hydra)
+	defer ts.Close()
+	client := ts.Client()
+	ctx := context.WithValue(context.Background(), goauth2.HTTPClient, client)
+	hydraClient := getHydraSDKClient(t, ts.URL, client)
 	oauth2Config := hydraClient.GetOAuth2ClientConfig()
+
 	// TODO: Come up with some tests...
 
 	t.Run("Health", func(t *testing.T) {
@@ -103,9 +113,17 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("Oauth2", func(t *testing.T) {
-		_, err := oauth2Config.Token(ctx)
+		tkn, err := oauth2Config.Token(ctx)
 		if err != nil {
 			t.Fatalf("could not get token: %v", err)
+		}
+
+		resp, _, err := hydraClient.IntrospectOAuth2Token(tkn.AccessToken, "")
+		if err != nil {
+			t.Fatalf("could not introspect token: %v", err)
+		}
+		if resp.ClientId != hydraClient.Configuration.ClientID {
+			t.Errorf("expected client id %s, got %s instead", hydraClient.Configuration.ClientID, resp.ClientId)
 		}
 	})
 }
