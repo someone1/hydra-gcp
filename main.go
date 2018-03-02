@@ -39,7 +39,10 @@ func GenerateHydraHandler(ctx context.Context, c *config.Config, disableTelemetr
 			c.DatabaseURL = "memory"
 			gctx := c.Context()
 			c.DatabaseURL = old
-			dm := dconfig.NewDatastoreConnection(ctx, u, c.GetLogger())
+			dm, err := dconfig.NewDatastoreConnection(ctx, u, c.GetLogger())
+			if err != nil {
+				c.GetLogger().Fatal(err)
+			}
 			gctx.Connection = dm
 			gctx.GroupManager = dgroup.NewDatastoreManager(dm.Context(), dm.Client(), dm.Namespace())
 			gctx.LadonManager = ldatastore.NewManager(dm.Context(), dm.Client(), dm.Namespace())

@@ -21,7 +21,6 @@ package client
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"cloud.google.com/go/datastore"
@@ -33,8 +32,10 @@ import (
 )
 
 const (
-	hydraClientKind    = "HydraClient"
-	hydraClientVersion = 1
+	hydraClientKind         = "HydraClient"
+	hydraClientAncestorKind = "HydraClientAncestor"
+	hydraClientAncestorName = "default"
+	hydraClientVersion      = 1
 )
 
 type clientData struct {
@@ -86,12 +87,12 @@ func (c *clientData) Load(ps []datastore.Property) error {
 	case -1:
 		// This is here to complete saving the entity should we need to udpate it
 		if c.Version == -1 {
-			return errors.New(fmt.Sprintf("unexpectedly got to version update trigger with incorrect version -1"))
+			return errors.Errorf("unexpectedly got to version update trigger with incorrect version -1")
 		}
 		c.Version = hydraClientVersion
 		c.update = true
 	default:
-		return errors.New(fmt.Sprintf("got unexpected version %d when loading entity", c.Version))
+		return errors.Errorf("got unexpected version %d when loading entity", c.Version)
 	}
 	return nil
 }
@@ -120,10 +121,20 @@ func NewDatastoreManager(ctx context.Context, client *datastore.Client, namespac
 	}
 }
 
-func (d *DatastoreManager) createClientKey(id string) *datastore.Key {
-	key := datastore.NameKey(hydraClientKind, id, nil)
+func (d *DatastoreManager) clientAncestorKey() *datastore.Key {
+	key := datastore.NameKey(hydraClientAncestorKind, hydraClientAncestorName, nil)
 	key.Namespace = d.namespace
 	return key
+}
+
+func (d *DatastoreManager) createClientKey(id string) *datastore.Key {
+	key := datastore.NameKey(hydraClientKind, id, d.clientAncestorKey())
+	key.Namespace = d.namespace
+	return key
+}
+
+func (d *DatastoreManager) newClientQuery() *datastore.Query {
+	return datastore.NewQuery(hydraClientKind).Ancestor(d.clientAncestorKey()).Namespace(d.namespace)
 }
 
 func clientDataFromClient(d *client.Client) *clientData {
@@ -261,7 +272,7 @@ func (d *DatastoreManager) GetClients(limit, offset int) (clients map[string]cli
 	datas := make([]clientData, 0)
 	clients = make(map[string]client.Client)
 
-	query := datastore.NewQuery(hydraClientKind).Order("__key__").Limit(limit).Offset(offset).Namespace(d.namespace)
+	query := d.newClientQuery().Order("__key__").Limit(limit).Offset(offset)
 
 	if _, err := d.client.GetAll(d.context, query, &datas); err != nil {
 		return nil, errors.WithStack(err)
@@ -271,8 +282,4 @@ func (d *DatastoreManager) GetClients(limit, offset int) (clients map[string]cli
 		clients[k.ID] = *k.toClient()
 	}
 	return clients, nil
-}
-
-func consenttypecheck() {
-	var _ client.Manager = (*DatastoreManager)(nil)
 }

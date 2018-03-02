@@ -18,7 +18,6 @@ package group
 
 import (
 	"context"
-	"fmt"
 
 	"cloud.google.com/go/datastore"
 	wgroup "github.com/ory/hydra/warden/group"
@@ -27,8 +26,10 @@ import (
 )
 
 const (
-	wardenGroupKind    = "HydraWardenGroup"
-	wardenGroupVersion = 1
+	wardenGroupKind         = "HydraWardenGroup"
+	wardenGroupAncestorKind = "HydraWardenGroupAncestor"
+	wardenGroupAncestorName = "default"
+	wardenGroupVersion      = 1
 )
 
 //DatastoreManager implements group.Manager using Google's Datastore
@@ -82,12 +83,12 @@ func (h *hydraWardenGroup) Load(ps []datastore.Property) error {
 	case -1:
 		// This is here to complete saving the entity should we need to udpate it
 		if h.Version == -1 {
-			return errors.New(fmt.Sprintf("unexpectedly got to version update trigger with incorrect version -1"))
+			return errors.Errorf("unexpectedly got to version update trigger with incorrect version -1")
 		}
 		h.Version = wardenGroupVersion
 		h.update = true
 	default:
-		return errors.New(fmt.Sprintf("got unexpected version %d when loading entity", h.Version))
+		return errors.Errorf("got unexpected version %d when loading entity", h.Version)
 	}
 	return nil
 }
@@ -97,12 +98,24 @@ func (h *hydraWardenGroup) Save() ([]datastore.Property, error) {
 	return datastore.SaveStruct(h)
 }
 
-func (d *DatastoreManager) createGroupKey(groupID string) *datastore.Key {
-	key := datastore.NameKey(wardenGroupKind, groupID, nil)
+func (d *DatastoreManager) groupAncestorKey() *datastore.Key {
+	key := datastore.NameKey(wardenGroupAncestorKind, wardenGroupAncestorName, nil)
 	key.Namespace = d.namespace
 	return key
 }
 
+func (d *DatastoreManager) createGroupKey(groupID string) *datastore.Key {
+	key := datastore.NameKey(wardenGroupKind, groupID, d.groupAncestorKey())
+	key.Namespace = d.namespace
+	return key
+}
+
+func (d *DatastoreManager) newGroupQuery() *datastore.Query {
+	return datastore.NewQuery(wardenGroupKind).Ancestor(d.groupAncestorKey()).Namespace(d.namespace)
+}
+
+// CreateGroup will store a new group.Group in Cloud Datastore as long as a group with the given g.ID doesn't already exist.
+// If g.ID is blank, a new one will be automatically generated.
 func (d *DatastoreManager) CreateGroup(g *wgroup.Group) error {
 	if g.ID == "" {
 		g.ID = uuid.New()
@@ -122,6 +135,7 @@ func (d *DatastoreManager) CreateGroup(g *wgroup.Group) error {
 	return nil
 }
 
+// GetGroup will read the group with the associated id from Cloud Datastore.
 func (d *DatastoreManager) GetGroup(id string) (*wgroup.Group, error) {
 	var found hydraWardenGroup
 	key := d.createGroupKey(id)
@@ -144,6 +158,7 @@ func (d *DatastoreManager) GetGroup(id string) (*wgroup.Group, error) {
 	}, nil
 }
 
+// DeleteGroup will delete a group with ID id.
 func (d *DatastoreManager) DeleteGroup(id string) error {
 	key := d.createGroupKey(id)
 
@@ -154,6 +169,7 @@ func (d *DatastoreManager) DeleteGroup(id string) error {
 	return nil
 }
 
+// AddGroupMembers will add group members to the group in Cloud Datastore with ID groupID.
 func (d *DatastoreManager) AddGroupMembers(groupID string, subjects []string) error {
 	key := d.createGroupKey(groupID)
 
@@ -186,6 +202,7 @@ func (d *DatastoreManager) AddGroupMembers(groupID string, subjects []string) er
 	return nil
 }
 
+// RemoveGroupMembers will remove members from the group in Cloud Datastore with ID groupID.
 func (d *DatastoreManager) RemoveGroupMembers(groupID string, subjects []string) error {
 	key := d.createGroupKey(groupID)
 
@@ -221,13 +238,15 @@ func (d *DatastoreManager) RemoveGroupMembers(groupID string, subjects []string)
 	return nil
 }
 
+// FindGroupsByMember will query Cloud Datastore for all groups that the Member subject is in and return them, limited to limit groups, offset by offset.
 func (d *DatastoreManager) FindGroupsByMember(subject string, limit, offset int) ([]wgroup.Group, error) {
-	query := datastore.NewQuery(wardenGroupKind).Filter("m =", subject).Limit(limit).Offset(offset).Namespace(d.namespace)
+	query := d.newGroupQuery().Filter("m =", subject).Limit(limit).Offset(offset)
 	return d.executeQuery(query)
 }
 
+// ListGroups will return all Groups in Cloud Datastore limited by limit and offset by offset.
 func (d *DatastoreManager) ListGroups(limit, offset int) ([]wgroup.Group, error) {
-	query := datastore.NewQuery(wardenGroupKind).Limit(limit).Offset(offset).Namespace(d.namespace)
+	query := d.newGroupQuery().Limit(limit).Offset(offset)
 	return d.executeQuery(query)
 }
 
@@ -261,8 +280,4 @@ func (d *DatastoreManager) executeQuery(query *datastore.Query) ([]wgroup.Group,
 	}
 
 	return wgroups, nil
-}
-
-func typecheck() {
-	var _ wgroup.Manager = (*DatastoreManager)(nil)
 }

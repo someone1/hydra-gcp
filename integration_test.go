@@ -26,6 +26,7 @@ import (
 	"github.com/ory/hydra/config"
 	"github.com/ory/hydra/health"
 	sdk "github.com/ory/hydra/sdk/go/hydra"
+	"github.com/ory/hydra/sdk/go/hydra/swagger"
 	"github.com/rs/cors"
 	"github.com/someone1/gcp-jwt-go"
 	"golang.org/x/crypto/bcrypt"
@@ -61,7 +62,7 @@ func generateGCPHydraHandler(t *testing.T) http.Handler {
 	return GenerateHydraHandler(ctx, c, false, cors.Options{})
 }
 
-func getHydraSDKClient(t *testing.T, basePath string, client *http.Client) *sdk.CodeGenSDK {
+func getHydraSDKClient(t *testing.T, ctx context.Context, basePath string) *sdk.CodeGenSDK {
 	t.Helper()
 	forcedCreds := os.Getenv("FORCE_ROOT_CLIENT_CREDENTIALS")
 	credsParts := strings.Split(forcedCreds, ":")
@@ -79,10 +80,13 @@ func getHydraSDKClient(t *testing.T, basePath string, client *http.Client) *sdk.
 	if err != nil {
 		t.Fatalf("could not get hydra sdk client: %v", err)
 	}
-	hydraClient.OAuth2Api.Configuration.Transport = client.Transport
-	hydraClient.JsonWebKeyApi.Configuration.Transport = client.Transport
-	hydraClient.WardenApi.Configuration.Transport = client.Transport
-	hydraClient.PolicyApi.Configuration.Transport = client.Transport
+
+	oauth2Config := hydraClient.GetOAuth2ClientConfig()
+	oauth2Client := oauth2Config.Client(ctx)
+	hydraClient.OAuth2Api.Configuration.Transport = oauth2Client.Transport
+	hydraClient.JsonWebKeyApi.Configuration.Transport = oauth2Client.Transport
+	hydraClient.WardenApi.Configuration.Transport = oauth2Client.Transport
+	hydraClient.PolicyApi.Configuration.Transport = oauth2Client.Transport
 	return hydraClient
 }
 
@@ -92,7 +96,7 @@ func TestIntegration(t *testing.T) {
 	defer ts.Close()
 	client := ts.Client()
 	ctx := context.WithValue(context.Background(), goauth2.HTTPClient, client)
-	hydraClient := getHydraSDKClient(t, ts.URL, client)
+	hydraClient := getHydraSDKClient(t, ctx, ts.URL)
 	oauth2Config := hydraClient.GetOAuth2ClientConfig()
 
 	// TODO: Come up with some tests...
@@ -124,6 +128,31 @@ func TestIntegration(t *testing.T) {
 		}
 		if resp.ClientId != hydraClient.Configuration.ClientID {
 			t.Errorf("expected client id %s, got %s instead", hydraClient.Configuration.ClientID, resp.ClientId)
+		}
+	})
+
+	t.Run("Warden", func(t *testing.T) {
+		// List Groups, ensure nothing exists for our test
+		groups, _, err := hydraClient.ListGroups("test", 0, 0)
+		if err != nil {
+			t.Fatalf("could not list groups: %v", err)
+		}
+
+		if len(groups) != 0 {
+			t.Fatalf("expected 0 groups, got %d instead", len(groups))
+		}
+
+		// Create a Group
+		group, _, err := hydraClient.CreateGroup(swagger.Group{Id: "testGroup"})
+		if err != nil {
+			t.Fatalf("could not create group: %v", err)
+		}
+
+		// Add a member to a group
+		group.Members = append(group.Members, "test", "test2")
+		_, err = hydraClient.AddMembersToGroup(group.Id, swagger.GroupMembers{Members: group.Members})
+		if err != nil {
+			t.Fatalf("could not add members to a group: %v", err)
 		}
 	})
 }

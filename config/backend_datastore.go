@@ -21,8 +21,13 @@ import (
 	"net/url"
 
 	"cloud.google.com/go/datastore"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/api/option"
+)
+
+const (
+	datastoreScheme = "datastore"
 )
 
 // Datastore URLs should be in the format of datastore://<projectid>?namespace=&credentialsFile=
@@ -37,30 +42,31 @@ type DatastoreConnection struct {
 }
 
 // NewDatastoreConnection initializes and returns a DatastoreConnection
-func NewDatastoreConnection(ctx context.Context, URL *url.URL, l logrus.FieldLogger) *DatastoreConnection {
-	return &DatastoreConnection{
+func NewDatastoreConnection(ctx context.Context, URL *url.URL, l logrus.FieldLogger) (*DatastoreConnection, error) {
+	d := &DatastoreConnection{
 		context: ctx,
 		url:     URL,
 		l:       l,
 	}
-}
 
-// Client will initialize and return a datastore.Client on first call and return the same datastore.Client on subseqeunt calls.
-func (d *DatastoreConnection) Client() *datastore.Client {
-	if d.client != nil {
-		return d.client
-	}
 	var err error
 	var opts []option.ClientOption
+	if d.url.Scheme != datastoreScheme {
+		return nil, errors.New("incorrect scheme provided in URL")
+	}
 	urlOpts := d.url.Query()
 	if urlOpts.Get("credentialsFile") != "" {
 		opts = append(opts, option.WithCredentialsFile(urlOpts.Get("credentialsFile")))
 	}
 
 	if d.client, err = datastore.NewClient(d.context, d.url.Host, opts...); err != nil {
-		d.l.Fatalf("Could not Connect to Datastore: %s", err)
+		return nil, errors.Wrap(err, "Could not Connect to Datastore")
 	}
+	return d, nil
+}
 
+// Client will return a *datastore.Client
+func (d *DatastoreConnection) Client() *datastore.Client {
 	return d.client
 }
 

@@ -22,7 +22,6 @@ package oauth2
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"strings"
 	"time"
 
@@ -34,8 +33,10 @@ import (
 )
 
 const (
-	hydraConsentRequestKind = "HydraConsentRequest"
-	consentVersion          = 1
+	hydraConsentRequestKind         = "HydraConsentRequest"
+	hydraConsentRequestAncestorKind = "HydraConsentRequestAncestor"
+	hydraConsentRequestAncestorName = "default"
+	consentVersion                  = 1
 )
 
 type consentRequestData struct {
@@ -85,12 +86,12 @@ func (c *consentRequestData) Load(ps []datastore.Property) error {
 	case -1:
 		// This is here to complete saving the entity should we need to udpate it
 		if c.Version == -1 {
-			return errors.New(fmt.Sprintf("unexpectedly got to version update trigger with incorrect version -1"))
+			return errors.Errorf("unexpectedly got to version update trigger with incorrect version -1")
 		}
 		c.Version = consentVersion
 		c.update = true
 	default:
-		return errors.New(fmt.Sprintf("got unexpected version %d when loading entity", c.Version))
+		return errors.Errorf("got unexpected version %d when loading entity", c.Version)
 	}
 	return nil
 }
@@ -117,8 +118,14 @@ func NewConsentRequestDatastoreManager(ctx context.Context, client *datastore.Cl
 	}
 }
 
+func (c *ConsentRequestDatastoreManager) consentReqAncestorKey() *datastore.Key {
+	key := datastore.NameKey(hydraConsentRequestAncestorKind, hydraConsentRequestAncestorName, nil)
+	key.Namespace = c.namespace
+	return key
+}
+
 func (c *ConsentRequestDatastoreManager) createConsentReqKey(id string) *datastore.Key {
-	key := datastore.NameKey(hydraConsentRequestKind, id, nil)
+	key := datastore.NameKey(hydraConsentRequestKind, id, c.consentReqAncestorKey())
 	key.Namespace = c.namespace
 	return key
 }
@@ -282,8 +289,4 @@ func (c *ConsentRequestDatastoreManager) GetConsentRequest(id string) (*oauth2.C
 		return nil, errors.WithStack(err)
 	}
 	return r, nil
-}
-
-func consenttypecheck() {
-	var _ oauth2.ConsentRequestManager = (*ConsentRequestDatastoreManager)(nil)
 }

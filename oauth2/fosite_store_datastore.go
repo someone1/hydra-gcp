@@ -22,7 +22,6 @@ package oauth2
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/url"
 	"strings"
 	"time"
@@ -30,17 +29,21 @@ import (
 	"cloud.google.com/go/datastore"
 	"github.com/ory/fosite"
 	"github.com/ory/hydra/client"
-	"github.com/ory/hydra/pkg"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
 const (
-	hydraOauth2OpenIDKind   = "HydraOauth2OIDC"
-	hydraOauth2AccessKind   = "HydraOauth2Access"
-	hydraOauth2RefreshKind  = "HydraOauth2Refresh"
-	hydraOauth2AuthCodeKind = "HydraOauth2Code"
-	oauth2Version           = 1
+	hydraOauth2OpenIDKind           = "HydraOauth2OIDC"
+	hydraOauth2AccessKind           = "HydraOauth2Access"
+	hydraOauth2RefreshKind          = "HydraOauth2Refresh"
+	hydraOauth2AuthCodeKind         = "HydraOauth2Code"
+	hydraOauth2OpenIDAncestorKind   = "HydraOauth2OIDCAncestor"
+	hydraOauth2AccessAncestorKind   = "HydraOauth2AccessAncestor"
+	hydraOauth2RefreshAncestorKind  = "HydraOauth2RefreshAncestor"
+	hydraOauth2AuthCodeAncestorKind = "HydraOauth2CodeAncestor"
+	hydraOauth2AncestorName         = "default"
+	oauth2Version                   = 1
 )
 
 type hydraOauth2Data struct {
@@ -87,12 +90,12 @@ func (h *hydraOauth2Data) Load(ps []datastore.Property) error {
 	case -1:
 		// This is here to complete saving the entity should we need to udpate it
 		if h.Version == -1 {
-			return errors.New(fmt.Sprintf("unexpectedly got to version update trigger with incorrect version -1"))
+			return errors.Errorf("unexpectedly got to version update trigger with incorrect version -1")
 		}
 		h.Version = oauth2Version
 		h.update = true
 	default:
-		return errors.New(fmt.Sprintf("got unexpected version %d when loading entity", h.Version))
+		return errors.Errorf("got unexpected version %d when loading entity", h.Version)
 	}
 	return nil
 }
@@ -145,10 +148,20 @@ func (f *FositeDatastoreStore) createCodeKey(sig string) *datastore.Key {
 	return f.createKeyForKind(sig, hydraOauth2AuthCodeKind)
 }
 
-func (f *FositeDatastoreStore) createKeyForKind(sig, kind string) *datastore.Key {
-	key := datastore.NameKey(kind, sig, nil)
+func (f *FositeDatastoreStore) createAncestorKeyForKind(kind string) *datastore.Key {
+	key := datastore.NameKey(kind, hydraOauth2AncestorName, nil)
 	key.Namespace = f.namespace
 	return key
+}
+
+func (f *FositeDatastoreStore) createKeyForKind(sig, kind string) *datastore.Key {
+	key := datastore.NameKey(kind, sig, f.createAncestorKeyForKind(kind))
+	key.Namespace = f.namespace
+	return key
+}
+
+func (f *FositeDatastoreStore) newQueryForKind(kind string) *datastore.Query {
+	return datastore.NewQuery(kind).Ancestor(f.createAncestorKeyForKind(kind)).Namespace(f.namespace)
 }
 
 func oauth2DataFromRequest(signature string, r fosite.Requester, logger logrus.FieldLogger) (*hydraOauth2Data, error) {
@@ -252,7 +265,7 @@ func (f *FositeDatastoreStore) deleteSession(ctx context.Context, key *datastore
 }
 
 func (f *FositeDatastoreStore) revokeSession(ctx context.Context, id, kind string) error {
-	query := datastore.NewQuery(kind).Filter("rid=", id).KeysOnly().Namespace(f.namespace)
+	query := f.newQueryForKind(kind).Filter("rid=", id).KeysOnly()
 	keys, err := f.client.GetAll(ctx, query, nil)
 	if err != nil {
 		return errors.WithStack(err)
@@ -325,7 +338,7 @@ func (f *FositeDatastoreStore) RevokeAccessToken(ctx context.Context, id string)
 
 func (f *FositeDatastoreStore) FlushInactiveAccessTokens(ctx context.Context, notAfter time.Time) error {
 	expireTime := time.Now().Add(-f.AccessTokenLifespan)
-	query := datastore.NewQuery(hydraOauth2AccessKind).KeysOnly().Namespace(f.namespace)
+	query := f.newQueryForKind(hydraOauth2AccessKind).KeysOnly()
 	if expireTime.Before(notAfter) {
 		query = query.Filter("rat<", expireTime)
 	} else {
@@ -340,8 +353,4 @@ func (f *FositeDatastoreStore) FlushInactiveAccessTokens(ctx context.Context, no
 		return errors.WithStack(err)
 	}
 	return nil
-}
-
-func fositetypecheck() {
-	var _ pkg.FositeStorer = (*FositeDatastoreStore)(nil)
 }
