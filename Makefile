@@ -13,7 +13,7 @@ lint:
 	fi
 
 get:
-	go get -v -d -u ./...
+	go get -v -d -u -t ./...
 	git -C ${GOPATH}/src/github.com/square/go-jose/ checkout --track origin/v2
 	go get -d -v -u github.com/square/go-jose
 	git -C ${GOPATH}/src/github.com/segmentio/analytics-go/ checkout --track origin/v3.0
