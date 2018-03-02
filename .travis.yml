@@ -21,14 +21,15 @@ before_install:
   - go get github.com/alecthomas/gometalinter
 
 install:
-  - $HOME/gopath/bin/gometalinter --install
-  - curl https://sdk.cloud.google.com | bash --disable-prompts
-  - gcloud components install cloud-datastore-emulator
+  - $GOPATH/bin/gometalinter --install
+  - curl https://sdk.cloud.google.com > install.sh && chmod +x install.sh
+  - ./install.sh --disable-prompts
+  - $HOME/google-cloud-sdk/bin/gcloud components install cloud-datastore-emulator --quiet
   - make get
 
 before_script:
-  - gcloud beta emulators datastore start &
-  - $(gcloud beta emulators datastore env-init)
+  - $HOME/google-cloud-sdk/bin/gcloud beta emulators datastore start &
+  - $($HOME/google-cloud-sdk/bin/gcloud beta emulators datastore env-init)
 
 script:
   - $GOPATH/bin/goveralls -service=travis-ci
