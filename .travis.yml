@@ -7,7 +7,7 @@ go:
 - tip
 
 env:
-- ISSUER="http://localhost:8080" DATABASE_URL="datastore://hydra-gcp-test?namspace=hydra&credentialsFile=$GOPATH/src/github.com/someone1/hydra-gcp/credentials.json" SYSTEM_SECRET="notsosecretnotsosecretnotsosecret" CONSENT_URL="http://localhost:8080/consent" FORCE_ROOT_CLIENT_CREDENTIALS="admin:password"
+- ISSUER="http://localhost:8080" DATABASE_URL="datastore://hydra-gcp-test?namspace=hydra&credentialsFile=$GOPATH/src/github.com/someone1/hydra-gcp/credentials.json" GOOGLE_APPLICATION_CREDENTIALS="$GOPATH/src/github.com/someone1/hydra-gcp/credentials.json" SYSTEM_SECRET="notsosecretnotsosecretnotsosecret" CONSENT_URL="http://localhost:8080/consent" FORCE_ROOT_CLIENT_CREDENTIALS="admin:password"
 
 before_install:
 - openssl aes-256-cbc -K $encrypted_9ffc6e39c587_key -iv $encrypted_9ffc6e39c587_iv -in credentials.json.enc -out credentials.json -d
