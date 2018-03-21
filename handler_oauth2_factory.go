@@ -97,6 +97,7 @@ func newOAuth2Provider(ctxx context.Context, c *config.Config) fosite.OAuth2Prov
 		compose.OpenIDConnectExplicitFactory,
 		compose.OpenIDConnectHybridFactory,
 		compose.OpenIDConnectImplicitFactory,
+		compose.OpenIDConnectRefreshFactory,
 		compose.OAuth2TokenRevocationFactory,
 		warden.OAuth2TokenIntrospectionFactory,
 	)
