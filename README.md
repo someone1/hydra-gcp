@@ -31,6 +31,13 @@ Onto the good part. There are two things you are responsible for providing to th
 2. A `context.Context` with a configuration to be used with jwt-go (see the [gcp-jwt-go pacakage](https://github.com/someone1/gcp-jwt-go))
 3. Whether or not you'd like to disable the telemetry feature
 4. CORS options you'd like to use (you can see what Hydra does [here](https://github.com/ory/hydra/blob/master/cmd/server/handler.go#L48)
+5. Add the following to your Datastore indexes (index.yaml):
+```yaml
+- kind: HydraOauth2Access
+  ancestor: yes
+  properties:
+  - name: rat
+```
 
 That's about it. You can continue to use your own web framework so long as you're aware of the handlers already implemented by hydra (basically everything [here](https://www.ory.sh/docs/api/hydra) except for the `/keys.*` endpoints)
 
