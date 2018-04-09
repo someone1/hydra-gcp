@@ -56,7 +56,7 @@ func GenerateHydraHandler(ctx context.Context, c *config.Config, disableTelemetr
 
 	if !disableTelemetry {
 		metrics := c.GetMetrics()
-		go metrics.RegisterSegment(c.BuildVersion, c.BuildHash, c.BuildTime)
+		go metrics.RegisterSegment()
 		go metrics.CommitMemoryStatistics()
 		n.Use(metrics)
 	}

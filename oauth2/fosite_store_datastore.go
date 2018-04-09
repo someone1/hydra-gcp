@@ -38,10 +38,12 @@ const (
 	hydraOauth2AccessKind           = "HydraOauth2Access"
 	hydraOauth2RefreshKind          = "HydraOauth2Refresh"
 	hydraOauth2AuthCodeKind         = "HydraOauth2Code"
+	hydraOauth2PKCEKind             = "HydraOauth2PKCE"
 	hydraOauth2OpenIDAncestorKind   = "HydraOauth2OIDCAncestor"
 	hydraOauth2AccessAncestorKind   = "HydraOauth2AccessAncestor"
 	hydraOauth2RefreshAncestorKind  = "HydraOauth2RefreshAncestor"
 	hydraOauth2AuthCodeAncestorKind = "HydraOauth2CodeAncestor"
+	hydraOauth2PKCEAncestorKind     = "HydraOauth2PKCEAncestor"
 	hydraOauth2AncestorName         = "default"
 	oauth2Version                   = 1
 )
@@ -146,6 +148,9 @@ func (f *FositeDatastoreStore) createRefreshKey(sig string) *datastore.Key {
 }
 func (f *FositeDatastoreStore) createCodeKey(sig string) *datastore.Key {
 	return f.createKeyForKind(sig, hydraOauth2AuthCodeKind)
+}
+func (f *FositeDatastoreStore) createPKCEKey(sig string) *datastore.Key {
+	return f.createKeyForKind(sig, hydraOauth2PKCEKind)
 }
 
 func (f *FositeDatastoreStore) createAncestorKeyForKind(kind string) *datastore.Key {
@@ -322,6 +327,18 @@ func (f *FositeDatastoreStore) GetRefreshTokenSession(ctx context.Context, signa
 
 func (f *FositeDatastoreStore) DeleteRefreshTokenSession(ctx context.Context, signature string) error {
 	return f.deleteSession(ctx, f.createRefreshKey(signature))
+}
+
+func (f *FositeDatastoreStore) CreatePKCERequestSession(ctx context.Context, signature string, requester fosite.Requester) error {
+	return f.createSession(ctx, f.createPKCEKey(signature), requester)
+}
+
+func (f *FositeDatastoreStore) GetPKCERequestSession(ctx context.Context, signature string, session fosite.Session) (fosite.Requester, error) {
+	return f.findSessionBySignature(ctx, f.createPKCEKey(signature), session)
+}
+
+func (f *FositeDatastoreStore) DeletePKCERequestSession(ctx context.Context, signature string) error {
+	return f.deleteSession(ctx, f.createPKCEKey(signature))
 }
 
 func (f *FositeDatastoreStore) CreateImplicitAccessTokenSession(ctx context.Context, signature string, requester fosite.Requester) error {

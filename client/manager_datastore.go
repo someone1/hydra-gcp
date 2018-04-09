@@ -268,11 +268,29 @@ func (d *DatastoreManager) DeleteClient(id string) error {
 	return nil
 }
 
-func (d *DatastoreManager) GetClients(limit, offset int) (clients map[string]client.Client, err error) {
+// This follows the implementation from the master branch
+// func (d *DatastoreManager) GetClients(limit, offset int) (clients map[string]client.Client, err error) {
+// 	datas := make([]clientData, 0)
+// 	clients = make(map[string]client.Client)
+
+// 	query := d.newClientQuery().Order("__key__").Limit(limit).Offset(offset)
+
+// 	if _, err := d.client.GetAll(d.context, query, &datas); err != nil {
+// 		return nil, errors.WithStack(err)
+// 	}
+
+// 	for _, k := range datas {
+// 		clients[k.ID] = *k.toClient()
+// 	}
+// 	return clients, nil
+// }
+
+// Implementation for 0.11 branch
+func (d *DatastoreManager) GetClients() (clients map[string]client.Client, err error) {
 	datas := make([]clientData, 0)
 	clients = make(map[string]client.Client)
 
-	query := d.newClientQuery().Order("__key__").Limit(limit).Offset(offset)
+	query := d.newClientQuery().Order("__key__")
 
 	if _, err := d.client.GetAll(d.context, query, &datas); err != nil {
 		return nil, errors.WithStack(err)

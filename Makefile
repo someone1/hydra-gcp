@@ -17,6 +17,7 @@ get:
 	git -C ${GOPATH}/src/github.com/square/go-jose/ checkout --track origin/v2
 	go get -d -v -u github.com/square/go-jose
 	git -C ${GOPATH}/src/github.com/segmentio/analytics-go/ checkout --track origin/v3.0
+	git -C ${GOPATH}/src/github.com/ory/hydra/ checkout --track origin/0.11
 
 test:
 	go test ./...

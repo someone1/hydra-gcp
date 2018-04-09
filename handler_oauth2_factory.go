@@ -41,11 +41,22 @@ func injectFositeStore(c *config.Config, clients client.Manager) {
 
 	switch con := ctx.Connection.(type) {
 	case *config.MemoryConnection:
-		store = oauth2.NewFositeMemoryStore(clients, c.GetAccessTokenLifespan())
-		break
+		//store = oauth2.NewFositeMemoryStore(clients, c.GetAccessTokenLifespan())
+		store = &oauth2.FositeMemoryStore{
+			Manager:        clients,
+			AuthorizeCodes: make(map[string]fosite.Requester),
+			IDSessions:     make(map[string]fosite.Requester),
+			AccessTokens:   make(map[string]fosite.Requester),
+			RefreshTokens:  make(map[string]fosite.Requester),
+			PKCES:          make(map[string]fosite.Requester),
+		}
 	case *config.SQLConnection:
-		store = oauth2.NewFositeSQLStore(clients, con.GetDatabase(), c.GetLogger(), c.GetAccessTokenLifespan())
-		break
+		//store = oauth2.NewFositeSQLStore(clients, con.GetDatabase(), c.GetLogger(), c.GetAccessTokenLifespan())
+		store = &oauth2.FositeSQLStore{
+			DB:      con.GetDatabase(),
+			Manager: clients,
+			L:       c.GetLogger(),
+		}
 	case *config.PluginConnection:
 		var err error
 		if store, err = con.NewOAuth2Manager(clients); err != nil {
@@ -132,7 +143,7 @@ func newOAuth2Handler(c *config.Config, router *httprouter.Router, cm oauth2.Con
 			DefaultChallengeLifespan: c.GetChallengeTokenLifespan(),
 			DefaultIDTokenLifespan:   c.GetIDTokenLifespan(),
 		},
-		Storage:             c.Context().FositeStore,
+		//Storage:             c.Context().FositeStore,
 		ConsentURL:          *consentURL,
 		H:                   herodot.NewJSONWriter(c.GetLogger()),
 		AccessTokenLifespan: c.GetAccessTokenLifespan(),
