@@ -29,6 +29,7 @@ import (
 	"cloud.google.com/go/datastore"
 	"github.com/ory/fosite"
 	"github.com/ory/hydra/client"
+	"github.com/ory/hydra/pkg"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -45,7 +46,12 @@ const (
 	hydraOauth2AuthCodeAncestorKind = "HydraOauth2CodeAncestor"
 	hydraOauth2PKCEAncestorKind     = "HydraOauth2PKCEAncestor"
 	hydraOauth2AncestorName         = "default"
-	oauth2Version                   = 1
+	oauth2Version                   = 2
+)
+
+var (
+	// TypeCheck
+	_ pkg.FositeStorer = (*FositeDatastoreStore)(nil)
 )
 
 type hydraOauth2Data struct {
@@ -58,10 +64,11 @@ type hydraOauth2Data struct {
 	GrantedScopes string         `datastore:"gscps"`
 	Form          string         `datastore:"fd"`
 	Subject       string         `datastore:"sub"`
+	Active        bool           `datastore:"act"`
 	Session       []byte         `datastore:"sess"`
-	Version       int            `datastore:"v"`
 
-	update bool
+	Version int `datastore:"v"`
+	update  bool
 }
 
 // LoadKey is implemented for the KeyLoader interface
@@ -82,10 +89,11 @@ func (h *hydraOauth2Data) Load(ps []datastore.Property) error {
 	switch h.Version {
 	case oauth2Version:
 		// Up to date, nothing to do
+		h.Active = true
 		break
-	// case 1:
-	// 	// Update to version 2 here
-	// 	fallthrough
+	case 1:
+		// Update to version 2 here
+		fallthrough
 	// case 2:
 	// 	//update to version 3 here
 	// 	fallthrough
@@ -192,6 +200,7 @@ func oauth2DataFromRequest(signature string, r fosite.Requester, logger logrus.F
 		Form:          r.GetRequestForm().Encode(),
 		Session:       session,
 		Subject:       subject,
+		Active:        true,
 	}, nil
 }
 
@@ -248,6 +257,14 @@ func (f *FositeDatastoreStore) findSessionBySignature(ctx context.Context, key *
 		return nil, errors.Wrap(fosite.ErrNotFound, "")
 	} else if err != nil {
 		return nil, errors.WithStack(err)
+	} else if !d.Active && key.Kind == hydraOauth2AuthCodeKind {
+		if r, err := d.toRequest(session, f.Manager, f.L); err != nil {
+			return nil, err
+		} else {
+			return r, errors.WithStack(fosite.ErrInvalidatedAuthorizeCode)
+		}
+	} else if !d.Active {
+		return nil, errors.WithStack(fosite.ErrInactiveToken)
 	}
 
 	if d.update {
@@ -272,6 +289,9 @@ func (f *FositeDatastoreStore) deleteSession(ctx context.Context, key *datastore
 func (f *FositeDatastoreStore) revokeSession(ctx context.Context, id, kind string) error {
 	query := f.newQueryForKind(kind).Filter("rid=", id).KeysOnly()
 	keys, err := f.client.GetAll(ctx, query, nil)
+	if err == datastore.ErrNoSuchEntity {
+		return errors.Wrap(fosite.ErrNotFound, "")
+	}
 	if err != nil {
 		return errors.WithStack(err)
 	}
@@ -299,6 +319,24 @@ func (f *FositeDatastoreStore) CreateAuthorizeCodeSession(ctx context.Context, s
 
 func (f *FositeDatastoreStore) GetAuthorizeCodeSession(ctx context.Context, signature string, session fosite.Session) (fosite.Requester, error) {
 	return f.findSessionBySignature(ctx, f.createCodeKey(signature), session)
+}
+
+func (f *FositeDatastoreStore) InvalidateAuthorizeCodeSession(ctx context.Context, signature string) error {
+	var data hydraOauth2Data
+	key := f.createCodeKey(signature)
+
+	err := f.client.Get(ctx, key, &data)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+
+	data.Active = false
+	mutation := datastore.NewUpdate(key, &data)
+	if _, err := f.client.Mutate(ctx, mutation); err != nil {
+		return errors.WithStack(err)
+	}
+
+	return nil
 }
 
 func (f *FositeDatastoreStore) DeleteAuthorizeCodeSession(ctx context.Context, signature string) error {
@@ -365,6 +403,9 @@ func (f *FositeDatastoreStore) FlushInactiveAccessTokens(ctx context.Context, no
 	keys, err := f.client.GetAll(ctx, query, nil)
 	if err != nil {
 		return errors.WithStack(err)
+	}
+	if len(keys) == 0 {
+		return errors.Wrap(fosite.ErrNotFound, "")
 	}
 	if err = f.client.DeleteMulti(ctx, keys); err != nil {
 		return errors.WithStack(err)

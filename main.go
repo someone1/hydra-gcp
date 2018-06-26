@@ -9,21 +9,23 @@ import (
 	negronilogrus "github.com/meatballhat/negroni-logrus"
 	"github.com/ory/herodot"
 	"github.com/ory/hydra/config"
+	"github.com/ory/hydra/pkg"
 	"github.com/rs/cors"
 	"github.com/urfave/negroni"
 
 	dconfig "github.com/someone1/hydra-gcp/config"
-	dgroup "github.com/someone1/hydra-gcp/warden/group"
-	ldatastore "github.com/someone1/ladon-datastore"
 )
 
 // GenerateHydraHandler will bootstrap Hydra and return a http.Handler for you to use.
-func GenerateHydraHandler(ctx context.Context, c *config.Config, disableTelemetry bool, corsOpts cors.Options) http.Handler {
+func GenerateHydraHandler(ctx context.Context, c *config.Config, corsOpts cors.Options) http.Handler {
 	router := httprouter.New()
 	logger := c.GetLogger()
+	w := herodot.NewJSONWriter(logger)
+	w.ErrorEnhancer = nil
+
 	serverHandler := &Handler{
 		Config: c,
-		H:      herodot.NewJSONWriter(logger),
+		H:      w,
 	}
 
 	// Let's Hijack the database options
@@ -44,24 +46,27 @@ func GenerateHydraHandler(ctx context.Context, c *config.Config, disableTelemetr
 				c.GetLogger().Fatal(err)
 			}
 			gctx.Connection = dm
-			gctx.GroupManager = dgroup.NewDatastoreManager(dm.Context(), dm.Client(), dm.Namespace())
-			gctx.LadonManager = ldatastore.NewManager(dm.Context(), dm.Client(), dm.Namespace())
 			c.GetLogger().Infof("Switched from memory database to datastore")
 		}
 	}
 
 	serverHandler.registerRoutes(ctx, router)
 
-	n := negroni.New()
-
-	if !disableTelemetry {
-		metrics := c.GetMetrics()
-		go metrics.RegisterSegment()
-		go metrics.CommitMemoryStatistics()
-		n.Use(metrics)
+	if !c.ForceHTTP {
+		if c.Issuer == "" {
+			logger.Fatalln("IssuerURL must be explicitly specified unless --dangerous-force-http is passed. To find out more, use `hydra help host`.")
+		}
+		issuer, err := url.Parse(c.Issuer)
+		pkg.Must(err, "Could not parse issuer URL: %s", err)
+		if issuer.Scheme != "https" {
+			logger.Fatalln("IssuerURL must use HTTPS unless --dangerous-force-http is passed. To find out more, use `hydra help host`.")
+		}
 	}
 
+	n := negroni.New()
 	n.Use(negronilogrus.NewMiddlewareFromLogger(logger, c.Issuer))
+	n.Use(c.GetPrometheusMetrics())
+
 	n.UseFunc(serverHandler.rejectInsecureRequests)
 	n.UseHandler(router)
 	corsHandler := cors.New(corsOpts).Handler(n)

@@ -19,6 +19,7 @@ package config
 import (
 	"context"
 	"net/url"
+	"os"
 
 	"cloud.google.com/go/datastore"
 	"github.com/pkg/errors"
@@ -55,7 +56,8 @@ func NewDatastoreConnection(ctx context.Context, URL *url.URL, l logrus.FieldLog
 		return nil, errors.New("incorrect scheme provided in URL")
 	}
 	urlOpts := d.url.Query()
-	if urlOpts.Get("credentialsFile") != "" {
+	emulated := os.Getenv("DATASTORE_EMULATOR_HOST")
+	if urlOpts.Get("credentialsFile") != "" && emulated == "" {
 		opts = append(opts, option.WithCredentialsFile(urlOpts.Get("credentialsFile")))
 	}
 

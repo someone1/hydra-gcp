@@ -15,10 +15,13 @@
 package hydragcp
 
 import (
+	"strings"
+
 	"github.com/julienschmidt/httprouter"
 	"github.com/ory/herodot"
 	"github.com/ory/hydra/client"
 	"github.com/ory/hydra/config"
+	"github.com/ory/sqlcon"
 
 	dclient "github.com/someone1/hydra-gcp/client"
 	dconfig "github.com/someone1/hydra-gcp/config"
@@ -30,7 +33,7 @@ func newClientManager(c *config.Config) client.Manager {
 	switch con := ctx.Connection.(type) {
 	case *config.MemoryConnection:
 		return client.NewMemoryManager(ctx.Hasher)
-	case *config.SQLConnection:
+	case *sqlcon.SQLConnection:
 		return &client.SQLManager{
 			DB:     con.GetDatabase(),
 			Hasher: ctx.Hasher,
@@ -51,12 +54,10 @@ func newClientManager(c *config.Config) client.Manager {
 }
 
 func newClientHandler(c *config.Config, router *httprouter.Router, manager client.Manager) *client.Handler {
-	ctx := c.Context()
-	h := &client.Handler{
-		H: herodot.NewJSONWriter(c.GetLogger()),
-		W: ctx.Warden, Manager: manager,
-		ResourcePrefix: c.AccessControlResourcePrefix,
-	}
+	w := herodot.NewJSONWriter(c.GetLogger())
+	w.ErrorEnhancer = writerErrorEnhancer
+
+	h := client.NewHandler(manager, w, strings.Split(c.DefaultClientScope, ","))
 
 	h.SetRoutes(router)
 	return h

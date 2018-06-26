@@ -23,40 +23,56 @@ import (
 	"context"
 	"strings"
 
+	"gopkg.in/square/go-jose.v2/json"
+
 	"cloud.google.com/go/datastore"
 	"github.com/ory/fosite"
+	"github.com/ory/go-convenience/stringsx"
 	"github.com/ory/hydra/client"
-	"github.com/ory/hydra/pkg"
 	"github.com/pborman/uuid"
 	"github.com/pkg/errors"
+	"gopkg.in/square/go-jose.v2"
+)
+
+var (
+	// TypeCheck
+	_ client.Manager = (*DatastoreManager)(nil)
 )
 
 const (
 	hydraClientKind         = "HydraClient"
 	hydraClientAncestorKind = "HydraClientAncestor"
 	hydraClientAncestorName = "default"
-	hydraClientVersion      = 1
+	hydraClientVersion      = 2
 )
 
 type clientData struct {
-	Key               *datastore.Key `datastore:"-"`
-	ID                string         `datastore:"-"`
-	Name              string         `datastore:"cn"`
-	Secret            string         `datastore:"cs"`
-	RedirectURIs      string         `datastore:"ruris"`
-	GrantTypes        string         `datastore:"gt"`
-	ResponseTypes     string         `datastore:"rt"`
-	Scope             string         `datastore:"scp"`
-	Owner             string         `datastore:"owner"`
-	PolicyURI         string         `datastore:"puri"`
-	TermsOfServiceURI string         `datastore:"turi"`
-	ClientURI         string         `datastore:"curi"`
-	LogoURI           string         `datastore:"luri"`
-	Contacts          string         `datastore:"conts"`
-	Version           int            `datastore:"v"`
-	Public            bool           `datastore:"pub"`
+	Key                           *datastore.Key `datastore:"-"`
+	ID                            string         `datastore:"-"`
+	Name                          string         `datastore:"cn"`
+	Secret                        string         `datastore:"cs"`
+	RedirectURIs                  string         `datastore:"ruris"`
+	GrantTypes                    string         `datastore:"gt"`
+	ResponseTypes                 string         `datastore:"rt"`
+	Scope                         string         `datastore:"scp"`
+	Owner                         string         `datastore:"owner"`
+	PolicyURI                     string         `datastore:"puri"`
+	TermsOfServiceURI             string         `datastore:"turi"`
+	ClientURI                     string         `datastore:"curi"`
+	LogoURI                       string         `datastore:"luri"`
+	Contacts                      string         `datastore:"conts"`
+	Public                        bool           `datastore:"pub"`
+	SecretExpiresAt               int            `datastore:"csea"`
+	SectorIdentifierURI           string         `datastore:"siuri"`
+	JSONWebKeysURI                string         `datastore:"jwks_uri"`
+	JSONWebKeys                   string         `datastore:"jwks"`
+	TokenEndpointAuthMethod       string         `datastore:"team"`
+	RequestURIs                   string         `datastore:"ruri"`
+	RequestObjectSigningAlgorithm string         `datastore:"rosa"`
+	UserinfoSignedResponseAlg     string         `datastore:"usra"`
 
-	update bool
+	Version int `datastore:"v"`
+	update  bool
 }
 
 // LoadKey is implemented for the KeyLoader interface
@@ -78,9 +94,10 @@ func (c *clientData) Load(ps []datastore.Property) error {
 	case hydraClientVersion:
 		// Up to date, nothing to do
 		break
-	// case 1:
-	// 	// Update to version 2 here
-	// 	fallthrough
+	case 1:
+		// Update to version 2 here
+		c.SecretExpiresAt = 0
+		fallthrough
 	// case 2:
 	// 	//update to version 3 here
 	// 	fallthrough
@@ -137,42 +154,76 @@ func (d *DatastoreManager) newClientQuery() *datastore.Query {
 	return datastore.NewQuery(hydraClientKind).Ancestor(d.clientAncestorKey()).Namespace(d.namespace)
 }
 
-func clientDataFromClient(d *client.Client) *clientData {
-	return &clientData{
-		ID:                d.ID,
-		Name:              d.Name,
-		Secret:            d.Secret,
-		RedirectURIs:      strings.Join(d.RedirectURIs, "|"),
-		GrantTypes:        strings.Join(d.GrantTypes, "|"),
-		ResponseTypes:     strings.Join(d.ResponseTypes, "|"),
-		Scope:             d.Scope,
-		Owner:             d.Owner,
-		PolicyURI:         d.PolicyURI,
-		TermsOfServiceURI: d.TermsOfServiceURI,
-		ClientURI:         d.ClientURI,
-		LogoURI:           d.LogoURI,
-		Contacts:          strings.Join(d.Contacts, "|"),
-		Public:            d.Public,
+func clientDataFromClient(d *client.Client) (*clientData, error) {
+	jwks := ""
+
+	if d.JSONWebKeys != nil {
+		out, err := json.Marshal(d.JSONWebKeys)
+		if err != nil {
+			return nil, errors.WithStack(err)
+		}
+		jwks = string(out)
 	}
+	return &clientData{
+		ID:                            d.ID,
+		Name:                          d.Name,
+		Secret:                        d.Secret,
+		RedirectURIs:                  strings.Join(d.RedirectURIs, "|"),
+		GrantTypes:                    strings.Join(d.GrantTypes, "|"),
+		ResponseTypes:                 strings.Join(d.ResponseTypes, "|"),
+		Scope:                         d.Scope,
+		Owner:                         d.Owner,
+		PolicyURI:                     d.PolicyURI,
+		TermsOfServiceURI:             d.TermsOfServiceURI,
+		ClientURI:                     d.ClientURI,
+		LogoURI:                       d.LogoURI,
+		Contacts:                      strings.Join(d.Contacts, "|"),
+		Public:                        d.Public,
+		SecretExpiresAt:               d.SecretExpiresAt,
+		SectorIdentifierURI:           d.SectorIdentifierURI,
+		JSONWebKeysURI:                d.JSONWebKeysURI,
+		JSONWebKeys:                   jwks,
+		TokenEndpointAuthMethod:       d.TokenEndpointAuthMethod,
+		RequestURIs:                   strings.Join(d.RequestURIs, "|"),
+		RequestObjectSigningAlgorithm: d.RequestObjectSigningAlgorithm,
+		UserinfoSignedResponseAlg:     d.UserinfoSignedResponseAlg,
+	}, nil
 }
 
-func (c *clientData) toClient() *client.Client {
-	return &client.Client{
-		ID:                c.ID,
-		Name:              c.Name,
-		Secret:            c.Secret,
-		RedirectURIs:      pkg.SplitNonEmpty(c.RedirectURIs, "|"),
-		GrantTypes:        pkg.SplitNonEmpty(c.GrantTypes, "|"),
-		ResponseTypes:     pkg.SplitNonEmpty(c.ResponseTypes, "|"),
-		Scope:             c.Scope,
-		Owner:             c.Owner,
-		PolicyURI:         c.PolicyURI,
-		TermsOfServiceURI: c.TermsOfServiceURI,
-		ClientURI:         c.ClientURI,
-		LogoURI:           c.LogoURI,
-		Contacts:          pkg.SplitNonEmpty(c.Contacts, "|"),
-		Public:            c.Public,
+func (c *clientData) toClient() (*client.Client, error) {
+	cli := &client.Client{
+		ID:                            c.ID,
+		ClientID:                      c.ID,
+		Name:                          c.Name,
+		Secret:                        c.Secret,
+		RedirectURIs:                  stringsx.Splitx(c.RedirectURIs, "|"),
+		GrantTypes:                    stringsx.Splitx(c.GrantTypes, "|"),
+		ResponseTypes:                 stringsx.Splitx(c.ResponseTypes, "|"),
+		Scope:                         c.Scope,
+		Owner:                         c.Owner,
+		PolicyURI:                     c.PolicyURI,
+		TermsOfServiceURI:             c.TermsOfServiceURI,
+		ClientURI:                     c.ClientURI,
+		LogoURI:                       c.LogoURI,
+		Contacts:                      stringsx.Splitx(c.Contacts, "|"),
+		Public:                        c.Public,
+		SecretExpiresAt:               c.SecretExpiresAt,
+		SectorIdentifierURI:           c.SectorIdentifierURI,
+		JSONWebKeysURI:                c.JSONWebKeysURI,
+		TokenEndpointAuthMethod:       c.TokenEndpointAuthMethod,
+		RequestURIs:                   stringsx.Splitx(c.RequestURIs, "|"),
+		RequestObjectSigningAlgorithm: c.RequestObjectSigningAlgorithm,
+		UserinfoSignedResponseAlg:     c.UserinfoSignedResponseAlg,
 	}
+
+	if c.JSONWebKeys != "" {
+		cli.JSONWebKeys = new(jose.JSONWebKeySet)
+		if err := json.Unmarshal([]byte(c.JSONWebKeys), &cli.JSONWebKeys); err != nil {
+			return nil, errors.WithStack(err)
+		}
+	}
+
+	return cli, nil
 }
 
 func (d *DatastoreManager) GetConcreteClient(id string) (*client.Client, error) {
@@ -180,7 +231,7 @@ func (d *DatastoreManager) GetConcreteClient(id string) (*client.Client, error) 
 	key := d.createClientKey(id)
 
 	if err := d.client.Get(d.context, key, &cd); err == datastore.ErrNoSuchEntity {
-		return nil, errors.WithStack(pkg.ErrNotFound)
+		return nil, errors.Errorf("Unable to find client %s", id)
 	} else if err != nil {
 		return nil, errors.WithStack(err)
 	}
@@ -193,7 +244,7 @@ func (d *DatastoreManager) GetConcreteClient(id string) (*client.Client, error) 
 		cd.update = false
 	}
 
-	return cd.toClient(), nil
+	return cd.toClient()
 }
 
 func (d *DatastoreManager) GetClient(_ context.Context, id string) (fosite.Client, error) {
@@ -216,7 +267,11 @@ func (d *DatastoreManager) UpdateClient(c *client.Client) error {
 		c.Secret = string(h)
 	}
 
-	s := clientDataFromClient(c)
+	s, err := clientDataFromClient(c)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+
 	key := d.createClientKey(s.ID)
 	mutation := datastore.NewUpdate(key, s)
 
@@ -250,7 +305,10 @@ func (d *DatastoreManager) CreateClient(c *client.Client) error {
 	}
 	c.Secret = string(h)
 
-	data := clientDataFromClient(c)
+	data, err := clientDataFromClient(c)
+	if err != nil {
+		return errors.WithStack(err)
+	}
 	key := d.createClientKey(data.ID)
 	mutation := datastore.NewInsert(key, data)
 
@@ -269,11 +327,35 @@ func (d *DatastoreManager) DeleteClient(id string) error {
 }
 
 // This follows the implementation from the master branch
-// func (d *DatastoreManager) GetClients(limit, offset int) (clients map[string]client.Client, err error) {
+func (d *DatastoreManager) GetClients(limit, offset int) (map[string]client.Client, error) {
+	datas := make([]clientData, 0)
+	clients := make(map[string]client.Client)
+
+	query := d.newClientQuery().Order("__key__").Limit(limit).Offset(offset)
+
+	_, err := d.client.GetAll(d.context, query, &datas)
+
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+
+	for _, k := range datas {
+		c, err := k.toClient()
+		if err != nil {
+			return nil, errors.WithStack(err)
+		}
+
+		clients[k.ID] = *c
+	}
+	return clients, nil
+}
+
+// Implementation for 0.11 branch
+// func (d *DatastoreManager) GetClients() (clients map[string]client.Client, err error) {
 // 	datas := make([]clientData, 0)
 // 	clients = make(map[string]client.Client)
 
-// 	query := d.newClientQuery().Order("__key__").Limit(limit).Offset(offset)
+// 	query := d.newClientQuery().Order("__key__")
 
 // 	if _, err := d.client.GetAll(d.context, query, &datas); err != nil {
 // 		return nil, errors.WithStack(err)
@@ -284,20 +366,3 @@ func (d *DatastoreManager) DeleteClient(id string) error {
 // 	}
 // 	return clients, nil
 // }
-
-// Implementation for 0.11 branch
-func (d *DatastoreManager) GetClients() (clients map[string]client.Client, err error) {
-	datas := make([]clientData, 0)
-	clients = make(map[string]client.Client)
-
-	query := d.newClientQuery().Order("__key__")
-
-	if _, err := d.client.GetAll(d.context, query, &datas); err != nil {
-		return nil, errors.WithStack(err)
-	}
-
-	for _, k := range datas {
-		clients[k.ID] = *k.toClient()
-	}
-	return clients, nil
-}

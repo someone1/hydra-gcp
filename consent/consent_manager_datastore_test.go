@@ -12,17 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package oauth2
+package consent
 
 import (
 	"testing"
 
-	"github.com/ory/hydra/oauth2"
+	"github.com/ory/hydra/consent"
 )
 
 func TestConsentInterfaceType(t *testing.T) {
-	var m interface{} = &ConsentRequestDatastoreManager{}
-	if _, ok := m.(oauth2.ConsentRequestManager); !ok {
-		t.Fatalf("ConsentRequestDatastoreManager does not satisfy oauth2.ConsentRequestManager interface")
+	var m interface{} = &DatastoreManager{}
+	if _, ok := m.(consent.Manager); !ok {
+		t.Fatalf("ConsentRequestDatastoreManager does not satisfy consent.Manager interface")
 	}
 }

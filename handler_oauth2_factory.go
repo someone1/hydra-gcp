@@ -18,17 +18,21 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"strings"
+	"time"
 
 	"github.com/gorilla/sessions"
 	"github.com/julienschmidt/httprouter"
 	"github.com/ory/fosite"
 	"github.com/ory/fosite/compose"
+	"github.com/ory/fosite/handler/openid"
 	"github.com/ory/herodot"
 	"github.com/ory/hydra/client"
 	"github.com/ory/hydra/config"
+	"github.com/ory/hydra/consent"
 	"github.com/ory/hydra/oauth2"
 	"github.com/ory/hydra/pkg"
-	"github.com/ory/hydra/warden"
+	"github.com/ory/sqlcon"
 
 	foauth2 "github.com/someone1/fosite-gcp-oauth2"
 	dconfig "github.com/someone1/hydra-gcp/config"
@@ -41,22 +45,9 @@ func injectFositeStore(c *config.Config, clients client.Manager) {
 
 	switch con := ctx.Connection.(type) {
 	case *config.MemoryConnection:
-		//store = oauth2.NewFositeMemoryStore(clients, c.GetAccessTokenLifespan())
-		store = &oauth2.FositeMemoryStore{
-			Manager:        clients,
-			AuthorizeCodes: make(map[string]fosite.Requester),
-			IDSessions:     make(map[string]fosite.Requester),
-			AccessTokens:   make(map[string]fosite.Requester),
-			RefreshTokens:  make(map[string]fosite.Requester),
-			PKCES:          make(map[string]fosite.Requester),
-		}
-	case *config.SQLConnection:
-		//store = oauth2.NewFositeSQLStore(clients, con.GetDatabase(), c.GetLogger(), c.GetAccessTokenLifespan())
-		store = &oauth2.FositeSQLStore{
-			DB:      con.GetDatabase(),
-			Manager: clients,
-			L:       c.GetLogger(),
-		}
+		store = oauth2.NewFositeMemoryStore(clients, c.GetAccessTokenLifespan())
+	case *sqlcon.SQLConnection:
+		store = oauth2.NewFositeSQLStore(clients, con.GetDatabase(), c.GetLogger(), c.GetAccessTokenLifespan())
 	case *config.PluginConnection:
 		var err error
 		if store, err = con.NewOAuth2Manager(clients); err != nil {
@@ -85,6 +76,7 @@ func newOAuth2Provider(ctxx context.Context, c *config.Config) fosite.OAuth2Prov
 		SendDebugMessagesToClients:     c.SendOAuth2DebugMessagesToClients,
 		EnforcePKCE:                    false,
 		EnablePKCEPlainChallengeMethod: false,
+		TokenURL:                       strings.TrimRight(c.Issuer, "/") + oauth2.TokenPath,
 	}
 
 	oauth2strat := foauth2.NewOAuth2GCPStrategy(ctxx, compose.NewOAuth2HMACStrategy(fc, c.GetSystemSecret()))
@@ -98,6 +90,7 @@ func newOAuth2Provider(ctxx context.Context, c *config.Config) fosite.OAuth2Prov
 		&compose.CommonStrategy{
 			CoreStrategy:               oauth2strat,
 			OpenIDConnectTokenStrategy: openidstrat,
+			JWTStrategy:                openidstrat.JWTStrategy,
 		},
 		nil,
 		compose.OAuth2AuthorizeExplicitFactory,
@@ -110,25 +103,41 @@ func newOAuth2Provider(ctxx context.Context, c *config.Config) fosite.OAuth2Prov
 		compose.OpenIDConnectImplicitFactory,
 		compose.OpenIDConnectRefreshFactory,
 		compose.OAuth2TokenRevocationFactory,
-		warden.OAuth2TokenIntrospectionFactory,
+		compose.OAuth2TokenIntrospectionFactory,
 	)
 }
 
-func newOAuth2Handler(c *config.Config, router *httprouter.Router, cm oauth2.ConsentRequestManager, o fosite.OAuth2Provider) *oauth2.Handler {
-	if c.ConsentURL == "" {
-		proto := "https"
-		if c.ForceHTTP {
-			proto = "http"
-		}
-		host := "localhost"
-		if c.BindHost != "" {
-			host = c.BindHost
-		}
-		c.ConsentURL = fmt.Sprintf("%s://%s:%d/oauth2/consent", proto, host, c.BindPort)
+func setDefaultConsentURL(s string, c *config.Config, path string) string {
+	if s != "" {
+		return s
 	}
+	proto := "https"
+	if c.ForceHTTP {
+		proto = "http"
+	}
+	host := "localhost"
+	if c.BindHost != "" {
+		host = c.BindHost
+	}
+	return fmt.Sprintf("%s://%s:%d/%s", proto, host, c.BindPort, path)
+}
 
-	consentURL, err := url.Parse(c.ConsentURL)
-	pkg.Must(err, "Could not parse consent url %s.", c.ConsentURL)
+func newOAuth2Handler(ctx context.Context, c *config.Config, router *httprouter.Router, cm consent.Manager, o fosite.OAuth2Provider) *oauth2.Handler {
+	c.ConsentURL = setDefaultConsentURL(c.ConsentURL, c, "oauth2/fallbacks/consent")
+	c.LoginURL = setDefaultConsentURL(c.LoginURL, c, "oauth2/fallbacks/consent")
+	c.ErrorURL = setDefaultConsentURL(c.ErrorURL, c, "oauth2/fallbacks/error")
+
+	errorURL, err := url.Parse(c.ErrorURL)
+	pkg.Must(err, "Could not parse error url %s.", errorURL)
+
+	oidcStrategy := foauth2.NewOpenIDConnectStrategy(ctx)
+	oidcStrategy.Issuer = c.Issuer
+
+	// jwtStrategy, err := jwk.NewRS256JWTStrategy(c.Context().KeyManager, oauth2.OpenIDConnectKeyName)
+	// pkg.Must(err, "Could not fetch private signing key for OpenID Connect - did you forget to run \"hydra migrate sql\" or forget to set the SYSTEM_SECRET?")
+
+	w := herodot.NewJSONWriter(c.GetLogger())
+	w.ErrorEnhancer = writerErrorEnhancer
 
 	handler := &oauth2.Handler{
 		ScopesSupported:  c.OpenIDDiscoveryScopesSupported,
@@ -137,21 +146,22 @@ func newOAuth2Handler(c *config.Config, router *httprouter.Router, cm oauth2.Con
 		ForcedHTTP:       c.ForceHTTP,
 		OAuth2:           o,
 		ScopeStrategy:    c.GetScopeStrategy(),
-		Consent: &oauth2.DefaultConsentStrategy{
-			Issuer:                   c.Issuer,
-			ConsentManager:           c.Context().ConsentManager,
-			DefaultChallengeLifespan: c.GetChallengeTokenLifespan(),
-			DefaultIDTokenLifespan:   c.GetIDTokenLifespan(),
-		},
-		//Storage:             c.Context().FositeStore,
-		ConsentURL:          *consentURL,
-		H:                   herodot.NewJSONWriter(c.GetLogger()),
+		Consent: consent.NewStrategy(
+			c.LoginURL, c.ConsentURL, c.Issuer,
+			"/oauth2/auth", cm,
+			sessions.NewCookieStore(c.GetCookieSecret()), c.GetScopeStrategy(),
+			!c.ForceHTTP, time.Minute*15,
+			oidcStrategy,
+			openid.NewOpenIDConnectRequestValidator(nil, oidcStrategy),
+		),
+		Storage:             c.Context().FositeStore,
+		ErrorURL:            *errorURL,
+		H:                   w,
 		AccessTokenLifespan: c.GetAccessTokenLifespan(),
 		CookieStore:         sessions.NewCookieStore(c.GetCookieSecret()),
-		Issuer:              c.Issuer,
-		L:                   c.GetLogger(),
-		W:                   c.Context().Warden,
-		ResourcePrefix:      c.AccessControlResourcePrefix,
+		IssuerURL:           c.Issuer,
+		//JWTStrategy:         oidcStrategy.JWTStrategy,
+		IDTokenLifespan: c.GetIDTokenLifespan(),
 	}
 
 	handler.SetRoutes(router)

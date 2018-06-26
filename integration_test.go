@@ -20,13 +20,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"strings"
 	"testing"
+
+	"golang.org/x/oauth2/clientcredentials"
 
 	"github.com/ory/hydra/config"
 	"github.com/ory/hydra/health"
 	sdk "github.com/ory/hydra/sdk/go/hydra"
-	"github.com/ory/hydra/sdk/go/hydra/swagger"
+	swagger "github.com/ory/hydra/sdk/go/hydra/swagger"
 	"github.com/rs/cors"
 	"github.com/someone1/gcp-jwt-go"
 	"golang.org/x/crypto/bcrypt"
@@ -44,6 +45,7 @@ func generateGCPHydraHandler(t *testing.T) http.Handler {
 		Issuer:              os.Getenv("ISSUER"),
 		ConsentURL:          os.Getenv("CONSENT_URL"),
 		BCryptWorkFactor:    bcrypt.DefaultCost,
+		LogLevel:            "debug",
 		AccessTokenLifespan: "5m",
 	}
 
@@ -59,34 +61,22 @@ func generateGCPHydraHandler(t *testing.T) http.Handler {
 	ctx := context.WithValue(context.Background(), goauth2.HTTPClient, http.DefaultClient)
 	ctx = gcp_jwt.NewContextJWT(ctx, &gcp_jwt.IAMSignJWTConfig{ServiceAccount: jwtConfig.Email})
 
-	return GenerateHydraHandler(ctx, c, false, cors.Options{})
+	return GenerateHydraHandler(ctx, c, cors.Options{})
 }
 
-func getHydraSDKClient(t *testing.T, ctx context.Context, basePath string) *sdk.CodeGenSDK {
+func getHydraSDKClient(t *testing.T, client *http.Client, basePath string) *sdk.CodeGenSDK {
 	t.Helper()
-	forcedCreds := os.Getenv("FORCE_ROOT_CLIENT_CREDENTIALS")
-	credsParts := strings.Split(forcedCreds, ":")
-	if len(credsParts) != 2 {
-		t.Fatalf("FORCE_ROOT_CLIENT_CREDENTIALS not found or incorrect")
-	}
-
 	// Let's get Hydra SDK
 	hydraConfig := &sdk.Configuration{
-		EndpointURL:  basePath,
-		ClientID:     credsParts[0],
-		ClientSecret: credsParts[1],
+		EndpointURL: basePath,
 	}
 	hydraClient, err := sdk.NewSDK(hydraConfig)
 	if err != nil {
 		t.Fatalf("could not get hydra sdk client: %v", err)
 	}
 
-	oauth2Config := hydraClient.GetOAuth2ClientConfig()
-	oauth2Client := oauth2Config.Client(ctx)
-	hydraClient.OAuth2Api.Configuration.Transport = oauth2Client.Transport
-	hydraClient.JsonWebKeyApi.Configuration.Transport = oauth2Client.Transport
-	hydraClient.WardenApi.Configuration.Transport = oauth2Client.Transport
-	hydraClient.PolicyApi.Configuration.Transport = oauth2Client.Transport
+	hydraClient.OAuth2Api.Configuration.Transport = client.Transport
+	hydraClient.JsonWebKeyApi.Configuration.Transport = client.Transport
 	return hydraClient
 }
 
@@ -96,63 +86,123 @@ func TestIntegration(t *testing.T) {
 	defer ts.Close()
 	client := ts.Client()
 	ctx := context.WithValue(context.Background(), goauth2.HTTPClient, client)
-	hydraClient := getHydraSDKClient(t, ctx, ts.URL)
-	oauth2Config := hydraClient.GetOAuth2ClientConfig()
+	hydraClient := getHydraSDKClient(t, client, ts.URL)
 
 	// TODO: Come up with some tests...
 
 	t.Run("Health", func(t *testing.T) {
-		res, err := client.Get(ts.URL + health.HealthStatusPath)
-		if err != nil {
-			t.Fatalf("could not get to endpoint %s due to error %v", health.HealthStatusPath, err)
+		for _, path := range []string{health.ReadyCheckPath, health.AliveCheckPath} {
+			res, err := client.Get(ts.URL + path)
+			if err != nil {
+				t.Fatalf("could not get to endpoint %s due to error %v", path, err)
+			}
+			response, err := ioutil.ReadAll(res.Body)
+			res.Body.Close()
+			if err != nil {
+				t.Fatalf("could not get body of request due to error %v", err)
+			}
+			if string(response) != `{"status":"ok"}` {
+				t.Errorf(`expected {"status":"ok"} but got %s instead`, response)
+			}
 		}
-		response, err := ioutil.ReadAll(res.Body)
-		res.Body.Close()
+	})
+
+	t.Run("Clients", func(t *testing.T) {
+		clients, _, err := hydraClient.ListOAuth2Clients(100, 0)
 		if err != nil {
-			t.Fatalf("could not get body of request due to error %v", err)
+			t.Errorf("got an error while listing clients: %v", err)
 		}
-		if string(response) != `{"status": "ok"}` {
-			t.Errorf(`expected {"status": "ok"} but got %s instead`, response)
+
+		if len(clients) != 0 {
+			t.Errorf("expected no clients, got %d", len(clients))
+		}
+
+		client, _, err := hydraClient.CreateOAuth2Client(swagger.OAuth2Client{
+			ClientName:   "test",
+			ClientId:     "test",
+			ClientSecret: "password",
+		})
+
+		if err != nil {
+			t.Errorf("got an error while creating a client: %v", err)
+		}
+
+		clients, _, err = hydraClient.ListOAuth2Clients(100, 0)
+		if err != nil {
+			t.Errorf("got an error while listing clients: %v", err)
+		}
+
+		if len(clients) != 1 {
+			t.Fatalf("expected 1 client, got %d", len(clients))
+		}
+
+		if clients[0].ClientId != client.ClientId {
+			t.Errorf("expected client id %s, got %s", client.ClientId, clients[0].ClientId)
+			t.Errorf("%#v", client)
+			t.Errorf("%#v", clients)
+		}
+
+		client, _, err = hydraClient.GetOAuth2Client(client.ClientId)
+		if err != nil {
+			t.Errorf("got an error while getting clients: %v", err)
+		}
+
+		if clients[0].ClientId != client.ClientId {
+			t.Errorf("expected client id %s, got %s", client.ClientId, clients[0].ClientId)
+		}
+
+		client.Owner = "test"
+		_, _, err = hydraClient.UpdateOAuth2Client(client.ClientId, *client)
+		if err != nil {
+			t.Errorf("got an error while updating clients: %v", err)
+		}
+
+		_, err = hydraClient.DeleteOAuth2Client(client.ClientId)
+		if err != nil {
+			t.Errorf("got an error while deleting clients: %v", err)
+		}
+
+		clients, _, err = hydraClient.ListOAuth2Clients(100, 0)
+		if err != nil {
+			t.Errorf("got an error while listing clients: %v", err)
+		}
+
+		if len(clients) != 0 {
+			t.Errorf("expected no clients, got %d", len(clients))
 		}
 	})
 
 	t.Run("Oauth2", func(t *testing.T) {
+		client, _, err := hydraClient.CreateOAuth2Client(swagger.OAuth2Client{
+			ClientName:    "test",
+			ClientId:      "test",
+			ClientSecret:  "password",
+			GrantTypes:    []string{"authorize_code", "client_credentials"},
+			ResponseTypes: []string{"code", "token", "id_token"},
+		})
+		if err != nil {
+			t.Errorf("got an error while creating a client: %v", err)
+		}
+
+		oauth2Config := &clientcredentials.Config{
+			ClientID:     "test",
+			ClientSecret: "password",
+			TokenURL:     hydraClient.Configuration.EndpointURL + "/oauth2/token",
+		}
+
 		tkn, err := oauth2Config.Token(ctx)
 		if err != nil {
 			t.Fatalf("could not get token: %v", err)
 		}
+		oauthClient := oauth2Config.Client(ctx)
+		hydraClient.OAuth2Api.Configuration.Transport = oauthClient.Transport
 
 		resp, _, err := hydraClient.IntrospectOAuth2Token(tkn.AccessToken, "")
 		if err != nil {
 			t.Fatalf("could not introspect token: %v", err)
 		}
-		if resp.ClientId != hydraClient.Configuration.ClientID {
-			t.Errorf("expected client id %s, got %s instead", hydraClient.Configuration.ClientID, resp.ClientId)
-		}
-	})
-
-	t.Run("Warden", func(t *testing.T) {
-		// List Groups, ensure nothing exists for our test
-		groups, _, err := hydraClient.ListGroups("test", 0, 0)
-		if err != nil {
-			t.Fatalf("could not list groups: %v", err)
-		}
-
-		if len(groups) != 0 {
-			t.Fatalf("expected 0 groups, got %d instead", len(groups))
-		}
-
-		// Create a Group
-		group, _, err := hydraClient.CreateGroup(swagger.Group{Id: "testGroup"})
-		if err != nil {
-			t.Fatalf("could not create group: %v", err)
-		}
-
-		// Add a member to a group
-		group.Members = append(group.Members, "test", "test2")
-		_, err = hydraClient.AddMembersToGroup(group.Id, swagger.GroupMembers{Members: group.Members})
-		if err != nil {
-			t.Fatalf("could not add members to a group: %v", err)
+		if resp.ClientId != client.ClientId {
+			t.Errorf("expected client id %s, got %s instead", client.ClientId, resp.ClientId)
 		}
 	})
 }

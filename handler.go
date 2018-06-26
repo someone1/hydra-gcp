@@ -19,28 +19,22 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/ory/hydra/jwk"
-	"github.com/someone1/gcp-jwt-go"
-
 	"github.com/julienschmidt/httprouter"
 	"github.com/ory/herodot"
 	"github.com/ory/hydra/client"
 	"github.com/ory/hydra/config"
+	"github.com/ory/hydra/consent"
+	"github.com/ory/hydra/jwk"
 	"github.com/ory/hydra/oauth2"
-	"github.com/ory/hydra/policy"
-	"github.com/ory/hydra/warden"
-	"github.com/ory/hydra/warden/group"
-	"github.com/ory/ladon"
 	"github.com/pkg/errors"
+
+	"github.com/someone1/gcp-jwt-go"
 )
 
 type Handler struct {
 	Clients *client.Handler
 	OAuth2  *oauth2.Handler
-	Consent *oauth2.ConsentSessionHandler
-	Policy  *policy.Handler
-	Groups  *group.Handler
-	Warden  *warden.WardenHandler
+	Consent *consent.Handler
 	Config  *config.Config
 	H       herodot.Writer
 }
@@ -54,44 +48,21 @@ func (h *Handler) registerRoutes(ctxx nctx.Context, router *httprouter.Router) {
 	}
 
 	// Set up dependencies
-	injectConsentManager(c)
 	clientsManager := newClientManager(c)
+	injectConsentManager(c, clientsManager)
 	injectFositeStore(c, clientsManager)
 	oauth2Provider := newOAuth2Provider(ctxx, c)
 
-	// set up warden
-	ctx.Warden = &warden.LocalWarden{
-		Warden: &ladon.Ladon{
-			Manager: ctx.LadonManager,
-		},
-		OAuth2:              oauth2Provider,
-		Issuer:              c.Issuer,
-		AccessTokenLifespan: c.GetAccessTokenLifespan(),
-		Groups:              ctx.GroupManager,
-		L:                   c.GetLogger(),
-	}
-
 	// Set up handlers
 	h.Clients = newClientHandler(c, router, clientsManager)
-	h.Policy = newPolicyHandler(c, router)
-	h.Consent = newConsentHanlder(c, router)
-	h.OAuth2 = newOAuth2Handler(c, router, ctx.ConsentManager, oauth2Provider)
-	h.Warden = warden.NewHandler(c, router)
-	h.Groups = &group.Handler{
-		H:              herodot.NewJSONWriter(c.GetLogger()),
-		W:              ctx.Warden,
-		Manager:        ctx.GroupManager,
-		ResourcePrefix: c.AccessControlResourcePrefix,
-	}
-	h.Groups.SetRoutes(router)
+	h.Consent = newConsentHandler(c, router)
+	h.OAuth2 = newOAuth2Handler(ctxx, c, router, ctx.ConsentManager, oauth2Provider)
 	_ = newHealthHandler(c, router)
 
 	// JWK is handled by Google
 	router.GET(jwk.WellKnownKeysPath, func(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 		http.Redirect(w, r, fmt.Sprintf("https://www.googleapis.com/service_accounts/v1/jwk/%s", jwtConfig.ServiceAccount), http.StatusTemporaryRedirect)
 	})
-
-	h.createRootIfNewInstall(c)
 }
 
 func (h *Handler) rejectInsecureRequests(rw http.ResponseWriter, r *http.Request, next http.HandlerFunc) {

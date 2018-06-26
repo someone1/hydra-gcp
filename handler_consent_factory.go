@@ -17,32 +17,34 @@ package hydragcp
 import (
 	"github.com/julienschmidt/httprouter"
 	"github.com/ory/herodot"
+	"github.com/ory/hydra/client"
 	"github.com/ory/hydra/config"
-	"github.com/ory/hydra/oauth2"
+	"github.com/ory/hydra/consent"
+	"github.com/ory/sqlcon"
 
 	dconfig "github.com/someone1/hydra-gcp/config"
-	doauth2 "github.com/someone1/hydra-gcp/oauth2"
+	dconsent "github.com/someone1/hydra-gcp/consent"
 )
 
-func injectConsentManager(c *config.Config) {
+func injectConsentManager(c *config.Config, cm client.Manager) {
 	var ctx = c.Context()
-	var manager oauth2.ConsentRequestManager
+	var manager consent.Manager
 
 	switch con := ctx.Connection.(type) {
 	case *config.MemoryConnection:
-		manager = oauth2.NewConsentRequestMemoryManager()
+		manager = consent.NewMemoryManager()
 		break
-	case *config.SQLConnection:
-		manager = oauth2.NewConsentRequestSQLManager(con.GetDatabase())
+	case *sqlcon.SQLConnection:
+		manager = consent.NewSQLManager(con.GetDatabase(), cm)
 		break
 	case *config.PluginConnection:
 		var err error
-		if manager, err = con.NewConsentRequestManager(); err != nil {
+		if manager, err = con.NewConsentManager(); err != nil {
 			c.GetLogger().Fatalf("Could not load client manager plugin %s", err)
 		}
 		break
 	case *dconfig.DatastoreConnection:
-		manager = doauth2.NewConsentRequestDatastoreManager(con.Context(), con.Client(), con.Namespace())
+		manager = dconsent.NewDatastoreManager(con.Context(), con.Client(), con.Namespace(), cm)
 	default:
 		panic("Unknown connection type.")
 	}
@@ -51,12 +53,15 @@ func injectConsentManager(c *config.Config) {
 
 }
 
-func newConsentHanlder(c *config.Config, router *httprouter.Router) *oauth2.ConsentSessionHandler {
+func newConsentHandler(c *config.Config, router *httprouter.Router) *consent.Handler {
 	ctx := c.Context()
-	h := &oauth2.ConsentSessionHandler{
-		H: herodot.NewJSONWriter(c.GetLogger()),
-		W: ctx.Warden, M: ctx.ConsentManager,
-		ResourcePrefix: c.AccessControlResourcePrefix,
+
+	w := herodot.NewJSONWriter(c.GetLogger())
+	w.ErrorEnhancer = writerErrorEnhancer
+
+	h := &consent.Handler{
+		H: w,
+		M: ctx.ConsentManager,
 	}
 
 	h.SetRoutes(router)
