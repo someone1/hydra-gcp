@@ -23,8 +23,6 @@ import (
 	"context"
 	"strings"
 
-	"gopkg.in/square/go-jose.v2/json"
-
 	"cloud.google.com/go/datastore"
 	"github.com/ory/fosite"
 	"github.com/ory/go-convenience/stringsx"
@@ -32,6 +30,7 @@ import (
 	"github.com/pborman/uuid"
 	"github.com/pkg/errors"
 	"gopkg.in/square/go-jose.v2"
+	"gopkg.in/square/go-jose.v2/json"
 )
 
 var (
