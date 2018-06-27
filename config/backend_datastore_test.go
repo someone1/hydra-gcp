@@ -19,42 +19,10 @@ package config
 import (
 	"context"
 	"net/url"
-	"reflect"
 	"testing"
 
-	"cloud.google.com/go/datastore"
 	"github.com/sirupsen/logrus"
-	"google.golang.org/api/option"
 )
-
-func TestDatastoreConnection_Client(t *testing.T) {
-	type fields struct {
-		client  *datastore.Client
-		context context.Context
-		url     *url.URL
-		l       logrus.FieldLogger
-	}
-	tests := []struct {
-		name   string
-		fields fields
-		want   *datastore.Client
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			d := &DatastoreConnection{
-				client:  tt.fields.client,
-				context: tt.fields.context,
-				url:     tt.fields.url,
-				l:       tt.fields.l,
-			}
-			if got := d.Client(); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("DatastoreConnection.Client() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
 
 func mustParseURL(t *testing.T, urlStr string) *url.URL {
 	t.Helper()
@@ -66,24 +34,21 @@ func mustParseURL(t *testing.T, urlStr string) *url.URL {
 	return u
 }
 
-func mustNewDatastoreClient(ctx context.Context, t *testing.T, projectID string, opts ...option.ClientOption) *datastore.Client {
-	client, err := datastore.NewClient(ctx, projectID, opts...)
-	if err != nil {
-		t.Fatalf("could not create datastore.Client: %v", client)
-	}
-	return client
-}
-
 func TestNewDatastoreConnection(t *testing.T) {
-	validURL := mustParseURL(t, "datastore://project?namespace=namspace")
+	validURL := mustParseURL(t, "datastore://project?namespace=namespace")
 	type args struct {
 		ctx context.Context
 		URL *url.URL
 		l   logrus.FieldLogger
 	}
+	type fields struct {
+		namespace string
+		ctx       context.Context
+	}
 	tests := []struct {
 		name    string
 		args    args
+		fields  fields
 		wantErr bool
 	}{
 		{
@@ -91,6 +56,10 @@ func TestNewDatastoreConnection(t *testing.T) {
 			args{
 				context.Background(),
 				&url.URL{Scheme: "invalid"},
+				nil,
+			},
+			fields{
+				"",
 				nil,
 			},
 			true,
@@ -102,16 +71,38 @@ func TestNewDatastoreConnection(t *testing.T) {
 				validURL,
 				nil,
 			},
+			fields{
+				"namespace",
+				context.Background(),
+			},
 			false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := NewDatastoreConnection(tt.args.ctx, tt.args.URL, tt.args.l)
+			con, err := NewDatastoreConnection(tt.args.ctx, tt.args.URL, tt.args.l)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("NewDatastoreConnection() error = %v, wantErr %v", err, tt.wantErr)
 				return
+			}
+			if err == nil {
+				if want := con.Namespace(); want != tt.fields.namespace {
+					t.Errorf("DatastoreConnection.Namespace() = %s, want %s", want, tt.fields.namespace)
+					return
+				}
+				if want := con.Context(); want != tt.fields.ctx {
+					t.Errorf("DatastoreConnection.Context() = %s, want %s", want, tt.fields.ctx)
+					return
+				}
+				if want := con.l; want != tt.args.l {
+					t.Errorf("DatastoreConnection.l = %v, want %v", want, tt.args.l)
+					return
+				}
+				if want := con.url.String(); want != tt.args.URL.String() {
+					t.Errorf("DatastoreConnection.url = %s, want %s", want, tt.args.URL)
+					return
+				}
 			}
 		})
 	}

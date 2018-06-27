@@ -32,21 +32,16 @@ import (
 )
 
 const (
-	hydraConsentRequestKind                               = "HydraConsentRequest"
-	hydraConsentAunthenticationRequestKind                = "HydraConsentAuthenticationRequest"
-	hydraConsentRequestHandledKind                        = "HydraConsentRequestHandled"
-	hydraConsentAunthenticationRequestHandledKind         = "HydraConsentAuthenticationRequestHandled"
-	hydraConsentAunthenticationSessionKind                = "HydraConsentAuthenticationSession"
-	hydraConsentRequestAncestorKind                       = "HydraConsentRequestAncestor"
-	hydraConsentAunthenticationRequestAncestorKind        = "HydraConsentAuthenticationRequestAncestor"
-	hydraConsentRequestHandledAncestorKind                = "HydraConsentRequestHandledAncestor"
-	hydraConsentAunthenticationRequestHandledAncestorKind = "HydraConsentAuthenticationRequestHandledAncestor"
-	hydraConsentAunthenticationSessionAncestorKind        = "HydraConsentAuthenticationSessionAncestor"
-	hydraAncestorName                                     = "default"
-	consentVersion                                        = 1
-	handleVersion                                         = 1
-	handleAuthVersion                                     = 1
-	sessionVersion                                        = 1
+	hydraConsentRequestKind                       = "HydraConsentRequest"
+	hydraConsentAunthenticationRequestKind        = "HydraConsentAuthenticationRequest"
+	hydraConsentRequestHandledKind                = "HydraConsentRequestHandled"
+	hydraConsentAunthenticationRequestHandledKind = "HydraConsentAuthenticationRequestHandled"
+	hydraConsentAunthenticationSessionKind        = "HydraConsentAuthenticationSession"
+	hydraAncestorName                             = "default"
+	consentVersion                                = 1
+	handleVersion                                 = 1
+	handleAuthVersion                             = 1
+	sessionVersion                                = 1
 )
 
 func toDateHack(t time.Time) *time.Time {

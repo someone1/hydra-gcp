@@ -35,18 +35,13 @@ import (
 )
 
 const (
-	hydraOauth2OpenIDKind           = "HydraOauth2OIDC"
-	hydraOauth2AccessKind           = "HydraOauth2Access"
-	hydraOauth2RefreshKind          = "HydraOauth2Refresh"
-	hydraOauth2AuthCodeKind         = "HydraOauth2Code"
-	hydraOauth2PKCEKind             = "HydraOauth2PKCE"
-	hydraOauth2OpenIDAncestorKind   = "HydraOauth2OIDCAncestor"
-	hydraOauth2AccessAncestorKind   = "HydraOauth2AccessAncestor"
-	hydraOauth2RefreshAncestorKind  = "HydraOauth2RefreshAncestor"
-	hydraOauth2AuthCodeAncestorKind = "HydraOauth2CodeAncestor"
-	hydraOauth2PKCEAncestorKind     = "HydraOauth2PKCEAncestor"
-	hydraOauth2AncestorName         = "default"
-	oauth2Version                   = 2
+	hydraOauth2OpenIDKind   = "HydraOauth2OIDC"
+	hydraOauth2AccessKind   = "HydraOauth2Access"
+	hydraOauth2RefreshKind  = "HydraOauth2Refresh"
+	hydraOauth2AuthCodeKind = "HydraOauth2Code"
+	hydraOauth2PKCEKind     = "HydraOauth2PKCE"
+	hydraOauth2AncestorName = "default"
+	oauth2Version           = 2
 )
 
 var (

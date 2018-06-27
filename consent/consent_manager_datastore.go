@@ -46,64 +46,40 @@ type DatastoreManager struct {
 	manager   client.Manager
 }
 
-func (d *DatastoreManager) consentReqAncestorKey() *datastore.Key {
-	key := datastore.NameKey(hydraConsentRequestAncestorKind, hydraAncestorName, nil)
+func (d *DatastoreManager) createAncestorKeyForKind(kind string) *datastore.Key {
+	key := datastore.NameKey(kind, hydraAncestorName, nil)
 	key.Namespace = d.namespace
 	return key
+}
+
+func (d *DatastoreManager) createKeyForKind(id, kind string) *datastore.Key {
+	key := datastore.NameKey(kind, id, d.createAncestorKeyForKind(kind))
+	key.Namespace = d.namespace
+	return key
+}
+
+func (d *DatastoreManager) newQueryForKind(kind string) *datastore.Query {
+	return datastore.NewQuery(kind).Ancestor(d.createAncestorKeyForKind(kind)).Namespace(d.namespace)
 }
 
 func (d *DatastoreManager) createConsentReqKey(id string) *datastore.Key {
-	key := datastore.NameKey(hydraConsentRequestKind, id, d.consentReqAncestorKey())
-	key.Namespace = d.namespace
-	return key
-}
-
-func (d *DatastoreManager) consentAuthReqAncestorKey() *datastore.Key {
-	key := datastore.NameKey(hydraConsentAunthenticationRequestAncestorKind, hydraAncestorName, nil)
-	key.Namespace = d.namespace
-	return key
+	return d.createKeyForKind(id, hydraConsentRequestKind)
 }
 
 func (d *DatastoreManager) createConsentAuthReqKey(id string) *datastore.Key {
-	key := datastore.NameKey(hydraConsentAunthenticationRequestKind, id, d.consentAuthReqAncestorKey())
-	key.Namespace = d.namespace
-	return key
-}
-
-func (d *DatastoreManager) createhandleConsentRequestAncestorKey() *datastore.Key {
-	key := datastore.NameKey(hydraConsentRequestHandledAncestorKind, hydraAncestorName, nil)
-	key.Namespace = d.namespace
-	return key
+	return d.createKeyForKind(id, hydraConsentAunthenticationRequestKind)
 }
 
 func (d *DatastoreManager) createhandleConsentRequestKey(id string) *datastore.Key {
-	key := datastore.NameKey(hydraConsentRequestHandledKind, id, d.createhandleConsentRequestAncestorKey())
-	key.Namespace = d.namespace
-	return key
-}
-
-func (d *DatastoreManager) createhandleConsentAuthenticationRequestAncestorKey() *datastore.Key {
-	key := datastore.NameKey(hydraConsentAunthenticationRequestHandledAncestorKind, hydraAncestorName, nil)
-	key.Namespace = d.namespace
-	return key
+	return d.createKeyForKind(id, hydraConsentRequestHandledKind)
 }
 
 func (d *DatastoreManager) createhandleConsentAuthenticationRequestKey(id string) *datastore.Key {
-	key := datastore.NameKey(hydraConsentAunthenticationRequestHandledKind, id, d.createhandleConsentAuthenticationRequestAncestorKey())
-	key.Namespace = d.namespace
-	return key
-}
-
-func (d *DatastoreManager) createAuthSessionAncestoryKey() *datastore.Key {
-	key := datastore.NameKey(hydraConsentAunthenticationSessionAncestorKind, hydraAncestorName, nil)
-	key.Namespace = d.namespace
-	return key
+	return d.createKeyForKind(id, hydraConsentAunthenticationRequestHandledKind)
 }
 
 func (d *DatastoreManager) createAuthSessionKey(id string) *datastore.Key {
-	key := datastore.NameKey(hydraConsentAunthenticationSessionKind, id, d.createAuthSessionAncestoryKey())
-	key.Namespace = d.namespace
-	return key
+	return d.createKeyForKind(id, hydraConsentAunthenticationSessionKind)
 }
 
 // NewDatastoreManager initializes a new DatastoreManager with the given client
@@ -217,7 +193,7 @@ func (d *DatastoreManager) VerifyAndInvalidateConsentRequest(verifier string) (*
 	var queryResults []consentRequestData
 	var handledRequest handledConsentRequestData
 
-	query := datastore.NewQuery(hydraConsentRequestKind).Filter("vfr=", verifier).Ancestor(d.consentReqAncestorKey())
+	query := d.newQueryForKind(hydraConsentRequestKind).Filter("vfr=", verifier)
 	_, err := d.client.GetAll(d.context, query, &queryResults)
 	if err != nil {
 		return nil, err
@@ -273,7 +249,7 @@ func (d *DatastoreManager) VerifyAndInvalidateAuthenticationRequest(verifier str
 	var queryResults []consentRequestData
 	var handledAuthReqData handledAuthenticationConsentRequestData
 
-	query := datastore.NewQuery(hydraConsentAunthenticationRequestKind).Filter("vfr=", verifier).Ancestor(d.consentAuthReqAncestorKey())
+	query := d.newQueryForKind(hydraConsentAunthenticationRequestKind).Filter("vfr=", verifier)
 	_, err := d.client.GetAll(d.context, query, &queryResults)
 	if err != nil {
 		return nil, err
@@ -349,7 +325,7 @@ func (d *DatastoreManager) FindPreviouslyGrantedConsentRequests(client string, s
 	var a []handledConsentRequestData
 	var consentReqs []consentRequestData
 
-	query := datastore.NewQuery(hydraConsentRequestKind).Ancestor(d.consentReqAncestorKey()).Filter("cid=", client).Filter("sub=", subject).Filter("skip=", false)
+	query := d.newQueryForKind(hydraConsentRequestKind).Filter("cid=", client).Filter("sub=", subject).Filter("skip=", false)
 	_, err := d.client.GetAll(d.context, query, &consentReqs)
 	if err != nil {
 		return nil, errors.WithStack(err)
