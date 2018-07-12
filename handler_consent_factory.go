@@ -32,10 +32,10 @@ func injectConsentManager(c *config.Config, cm client.Manager) {
 
 	switch con := ctx.Connection.(type) {
 	case *config.MemoryConnection:
-		manager = consent.NewMemoryManager()
+		manager = consent.NewMemoryManager(ctx.FositeStore)
 		break
 	case *sqlcon.SQLConnection:
-		manager = consent.NewSQLManager(con.GetDatabase(), cm)
+		manager = consent.NewSQLManager(con.GetDatabase(), cm, ctx.FositeStore)
 		break
 	case *config.PluginConnection:
 		var err error
@@ -44,7 +44,7 @@ func injectConsentManager(c *config.Config, cm client.Manager) {
 		}
 		break
 	case *dconfig.DatastoreConnection:
-		manager = dconsent.NewDatastoreManager(con.Context(), con.Client(), con.Namespace(), cm)
+		manager = dconsent.NewDatastoreManager(con.Context(), con.Client(), con.Namespace(), cm, ctx.FositeStore)
 	default:
 		panic("Unknown connection type.")
 	}

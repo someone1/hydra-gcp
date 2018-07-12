@@ -22,8 +22,6 @@ import (
 	"os"
 	"testing"
 
-	"golang.org/x/oauth2/clientcredentials"
-
 	"github.com/ory/hydra/config"
 	"github.com/ory/hydra/health"
 	sdk "github.com/ory/hydra/sdk/go/hydra"
@@ -32,6 +30,7 @@ import (
 	"github.com/someone1/gcp-jwt-go"
 	"golang.org/x/crypto/bcrypt"
 	goauth2 "golang.org/x/oauth2"
+	"golang.org/x/oauth2/clientcredentials"
 	"golang.org/x/oauth2/google"
 )
 

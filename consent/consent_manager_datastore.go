@@ -44,6 +44,7 @@ type DatastoreManager struct {
 	context   context.Context
 	namespace string
 	manager   client.Manager
+	store     pkg.FositeStorer
 }
 
 func (d *DatastoreManager) createAncestorKeyForKind(kind string) *datastore.Key {
@@ -83,12 +84,94 @@ func (d *DatastoreManager) createAuthSessionKey(id string) *datastore.Key {
 }
 
 // NewDatastoreManager initializes a new DatastoreManager with the given client
-func NewDatastoreManager(ctx context.Context, client *datastore.Client, namespace string, c client.Manager) *DatastoreManager {
+func NewDatastoreManager(ctx context.Context, client *datastore.Client, namespace string, c client.Manager, store pkg.FositeStorer) *DatastoreManager {
 	return &DatastoreManager{
 		client:    client,
 		context:   ctx,
 		namespace: namespace,
+		store:     store,
 	}
+}
+
+func (d *DatastoreManager) RevokeUserConsentSession(user string) error {
+	return d.revokeConsentSession(user, "")
+}
+
+func (d *DatastoreManager) RevokeUserClientConsentSession(user, client string) error {
+	return d.revokeConsentSession(user, client)
+}
+
+func (d *DatastoreManager) revokeConsentSession(user, client string) error {
+	query := d.newQueryForKind(hydraConsentRequestKind).Filter("sub=", user).KeysOnly()
+	if client != "" {
+		query = query.Filter("cid=", client)
+	}
+
+	keys, err := d.client.GetAll(d.context, query, nil)
+	if err != nil {
+		return err
+	} else if len(keys) == 0 {
+		return errors.WithStack(pkg.ErrNotFound)
+	}
+
+	handledKeys := make([]*datastore.Key, len(keys))
+	handledRequests := make([]handledConsentRequestData, len(keys))
+	for idx, key := range keys {
+		handledKeys[idx] = d.createhandleConsentRequestKey(key.Name)
+	}
+
+	err = d.client.GetMulti(d.context, handledKeys, &handledRequests)
+	var merr datastore.MultiError = nil
+	var ok bool
+	if err != nil {
+		if merr, ok = err.(datastore.MultiError); !ok {
+			return err
+		}
+	}
+
+	var toDelete []*datastore.Key
+
+	for idx, handledRequest := range handledRequests {
+		if merr != nil && merr[idx] != nil && merr[idx] != datastore.ErrNoSuchEntity {
+			return merr[idx]
+		} else if merr != nil && merr[idx] == datastore.ErrNoSuchEntity {
+			continue
+		}
+
+		challenge := handledRequest.Challenge
+		if err := d.store.RevokeAccessToken(nil, challenge); errors.Cause(err) == fosite.ErrNotFound {
+			// do nothing
+		} else if err != nil {
+			return err
+		}
+		if err := d.store.RevokeRefreshToken(nil, challenge); errors.Cause(err) == fosite.ErrNotFound {
+			// do nothing
+		} else if err != nil {
+			return err
+		}
+		toDelete = append(toDelete, keys[idx], handledKeys[idx])
+	}
+
+	if len(toDelete) == 0 {
+		return errors.WithStack(pkg.ErrNotFound)
+	}
+
+	err = d.client.DeleteMulti(d.context, toDelete)
+	return err
+}
+
+func (d *DatastoreManager) RevokeUserAuthenticationSession(subject string) error {
+	query := d.newQueryForKind(hydraConsentAunthenticationSessionKind).Filter("sub=", subject).KeysOnly()
+	keys, err := d.client.GetAll(d.context, query, nil)
+	if err != nil {
+		return err
+	} else if len(keys) == 0 {
+		return errors.WithStack(pkg.ErrNotFound)
+	}
+
+	err = d.client.DeleteMulti(d.context, keys)
+
+	return err
 }
 
 func (d *DatastoreManager) CreateConsentRequest(c *consent.ConsentRequest) error {
