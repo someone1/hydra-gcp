@@ -23,9 +23,41 @@ package hydragcp
 import (
 	"net/http"
 
+	"github.com/ory/fosite"
+	"github.com/ory/herodot"
 	"github.com/pkg/errors"
 )
 
+type stackTracer interface {
+	StackTrace() errors.StackTrace
+}
+
+type enhancedError struct {
+	*fosite.RFC6749Error
+	trace errors.StackTrace
+}
+
+func (e *enhancedError) StackTrace() errors.StackTrace {
+	return e.trace
+}
+
 func writerErrorEnhancer(r *http.Request, err error) interface{} {
-	return errors.Cause(err)
+	if e, ok := errors.Cause(err).(*herodot.DefaultError); ok {
+		var trace []errors.Frame
+
+		if e, ok := err.(stackTracer); ok {
+			trace = e.StackTrace()
+		}
+
+		err := &enhancedError{
+			RFC6749Error: &fosite.RFC6749Error{
+				Name:        e.Error(),
+				Description: e.Reason(),
+				Code:        e.StatusCode(),
+			},
+			trace: trace,
+		}
+		return err
+	}
+	return fosite.ErrorToRFC6749Error(err)
 }

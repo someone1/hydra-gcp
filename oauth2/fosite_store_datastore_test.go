@@ -15,14 +15,53 @@
 package oauth2
 
 import (
+	"context"
 	"testing"
 
 	"github.com/ory/hydra/pkg"
 )
 
+type mockHydraOauth2Data struct {
+	Active  bool   `datastore:"act"`
+	Version int    `datastore:"v"`
+	Client  string `datastore:"cid"`
+}
+
 func TestFositeInterfaceType(t *testing.T) {
 	var m interface{} = &FositeDatastoreStore{}
 	if _, ok := m.(pkg.FositeStorer); !ok {
 		t.Fatalf("FositeDatastoreStore does not satisfy pkg.FositeStorer interface")
+	}
+}
+
+func TestHydraOauth2DataLoad(t *testing.T) {
+	t.Parallel()
+	if m, ok := fositeStores["datastore"].(*FositeDatastoreStore); ok {
+		key := m.createAccessKey("oauth2-upgrade-test")
+		key.Parent.Namespace = "upgrade-test"
+		key.Namespace = "upgrade-test"
+		mock := mockHydraOauth2Data{Version: 1, Active: false, Client: "foobar"}
+		if _, err := m.client.Put(context.Background(), key, &mock); err != nil {
+			t.Errorf("could not store dummy data - %v", err)
+			return
+		}
+
+		if _, err := m.findSessionBySignature(context.Background(), key, nil); err != nil {
+			t.Errorf("error getting data - %v", err)
+			return
+		}
+
+		var d hydraOauth2Data
+		if err := m.client.Get(context.Background(), key, &d); err != nil {
+			t.Errorf("error getting data - %v", err)
+			return
+		}
+
+		if d.Active != true || d.Version != oauth2Version {
+			t.Errorf("oauth2 data was not upgraded succesfully")
+		}
+
+	} else {
+		t.Error("could not get datastore connection")
 	}
 }
