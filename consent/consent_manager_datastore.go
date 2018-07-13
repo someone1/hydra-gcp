@@ -89,6 +89,7 @@ func NewDatastoreManager(ctx context.Context, client *datastore.Client, namespac
 		client:    client,
 		context:   ctx,
 		namespace: namespace,
+		manager:   c,
 		store:     store,
 	}
 }
@@ -120,7 +121,7 @@ func (d *DatastoreManager) revokeConsentSession(user, client string) error {
 		handledKeys[idx] = d.createhandleConsentRequestKey(key.Name)
 	}
 
-	err = d.client.GetMulti(d.context, handledKeys, &handledRequests)
+	err = d.client.GetMulti(d.context, handledKeys, handledRequests)
 	var merr datastore.MultiError = nil
 	var ok bool
 	if err != nil {
@@ -193,7 +194,7 @@ func (d *DatastoreManager) GetConsentRequest(challenge string) (*consent.Consent
 	var c consentRequestData
 	key := d.createConsentReqKey(challenge)
 
-	if err := d.client.Get(d.context, key, &d); err == datastore.ErrNoSuchEntity {
+	if err := d.client.Get(d.context, key, &c); err == datastore.ErrNoSuchEntity {
 		return nil, errors.WithStack(pkg.ErrNotFound)
 	} else if err != nil {
 		return nil, errors.WithStack(err)
@@ -234,7 +235,7 @@ func (d *DatastoreManager) GetAuthenticationRequest(challenge string) (*consent.
 	var c consentRequestData
 	key := d.createConsentAuthReqKey(challenge)
 
-	if err := d.client.Get(d.context, key, &d); err == datastore.ErrNoSuchEntity {
+	if err := d.client.Get(d.context, key, &c); err == datastore.ErrNoSuchEntity {
 		return nil, errors.WithStack(pkg.ErrNotFound)
 	} else if err != nil {
 		return nil, errors.WithStack(err)
@@ -412,8 +413,6 @@ func (d *DatastoreManager) FindPreviouslyGrantedConsentRequests(client string, s
 	_, err := d.client.GetAll(d.context, query, &consentReqs)
 	if err != nil {
 		return nil, errors.WithStack(err)
-	} else if len(consentReqs) == 0 {
-		return nil, errors.WithStack(errNoPreviousConsentFound)
 	}
 
 	var keys []*datastore.Key
@@ -421,12 +420,10 @@ func (d *DatastoreManager) FindPreviouslyGrantedConsentRequests(client string, s
 		keys = append(keys, d.createhandleConsentRequestKey(consentReq.Challenge))
 	}
 
-	handledReqs := make([]handledConsentRequestData, 0, len(keys))
-	err = d.client.GetMulti(d.context, keys, &handledReqs)
+	handledReqs := make([]handledConsentRequestData, len(keys))
+	err = d.client.GetMulti(d.context, keys, handledReqs)
 	if err != nil {
 		return nil, errors.WithStack(err)
-	} else if len(a) == 0 {
-		return nil, errors.WithStack(errNoPreviousConsentFound)
 	}
 
 	for _, handledReq := range handledReqs {

@@ -20,14 +20,14 @@
  * Modified for testing datastore only
  */
 
-package consent_test
+package consent
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"log"
 	"net/url"
+	"os"
 	"testing"
 	"time"
 
@@ -40,7 +40,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	dconfig "github.com/someone1/hydra-gcp/config"
-	dconsent "github.com/someone1/hydra-gcp/consent"
 )
 
 var clientManager = client.NewMemoryManager(&fosite.BCrypt{WorkFactor: 8})
@@ -142,7 +141,7 @@ func mockAuthRequest(key string, authAt bool) (c *AuthenticationRequest, h *Hand
 }
 
 func connectToDatastore(managers map[string]Manager, c client.Manager) {
-	u, err := url.Parse("datastore://consent_test?namespace=consent_test")
+	u, err := url.Parse("datastore://consent-test?namespace=consent-test")
 	if err != nil {
 		log.Fatalf("Could not parse DATABASE_URL: %s", err)
 	}
@@ -151,19 +150,17 @@ func connectToDatastore(managers map[string]Manager, c client.Manager) {
 	if err != nil {
 		log.Fatalf("could not connect to database: %v", err)
 	}
-	s := dconsent.NewDatastoreManager(con.Context(), con.Client(), con.Namespace(), c, fositeManager)
+	s := NewDatastoreManager(con.Context(), con.Client(), con.Namespace(), c, fositeManager)
 
 	managers["datastore"] = s
 }
 
 func TestMain(m *testing.M) {
-
-	flag.Parse()
 	if !testing.Short() {
 		connectToDatastore(managers, clientManager)
 	}
 
-	m.Run()
+	os.Exit(m.Run())
 }
 
 func TestManagers(t *testing.T) {

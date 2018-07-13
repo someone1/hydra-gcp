@@ -84,10 +84,10 @@ func (h *hydraOauth2Data) Load(ps []datastore.Property) error {
 	switch h.Version {
 	case oauth2Version:
 		// Up to date, nothing to do
-		h.Active = true
 		break
 	case 1:
 		// Update to version 2 here
+		h.Active = true
 		fallthrough
 	// case 2:
 	// 	//update to version 3 here
@@ -321,7 +321,9 @@ func (f *FositeDatastoreStore) InvalidateAuthorizeCodeSession(ctx context.Contex
 	key := f.createCodeKey(signature)
 
 	err := f.client.Get(ctx, key, &data)
-	if err != nil {
+	if err == datastore.ErrNoSuchEntity {
+		return nil
+	} else if err != nil {
 		return errors.WithStack(err)
 	}
 
@@ -399,9 +401,7 @@ func (f *FositeDatastoreStore) FlushInactiveAccessTokens(ctx context.Context, no
 	if err != nil {
 		return errors.WithStack(err)
 	}
-	if len(keys) == 0 {
-		return errors.Wrap(fosite.ErrNotFound, "")
-	}
+
 	if err = f.client.DeleteMulti(ctx, keys); err != nil {
 		return errors.WithStack(err)
 	}
