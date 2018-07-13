@@ -28,5 +28,6 @@ before_script:
 - "$($HOME/google-cloud-sdk/bin/gcloud beta emulators datastore env-init)"
 
 script:
-- "$GOPATH/bin/goveralls -service=travis-ci"
+- go test -v -covermode=count -coverprofile=coverage.out ./...
+- $GOPATH/bin/goveralls -coverprofile=coverage.out -service=travis-ci
 - make fmt vet build
