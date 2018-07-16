@@ -16,16 +16,20 @@ package hydragcp
 
 import (
 	"context"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/ory/hydra/config"
 	"github.com/ory/hydra/health"
+	"github.com/ory/hydra/jwk"
 	sdk "github.com/ory/hydra/sdk/go/hydra"
 	swagger "github.com/ory/hydra/sdk/go/hydra/swagger"
+	"github.com/pkg/errors"
 	"github.com/rs/cors"
 	"github.com/someone1/gcp-jwt-go"
 	"golang.org/x/crypto/bcrypt"
@@ -34,7 +38,7 @@ import (
 	"golang.org/x/oauth2/google"
 )
 
-func generateGCPHydraHandler(t *testing.T) http.Handler {
+func generateGCPHydraHandler(t *testing.T) (context.Context, http.Handler) {
 	t.Helper()
 
 	c := &config.Config{
@@ -43,6 +47,7 @@ func generateGCPHydraHandler(t *testing.T) http.Handler {
 		CookieSecret:        os.Getenv("SYSTEM_SECRET"),
 		Issuer:              os.Getenv("ISSUER"),
 		ConsentURL:          os.Getenv("CONSENT_URL"),
+		AllowTLSTermination: "0.0.0.0/0",
 		BCryptWorkFactor:    bcrypt.DefaultCost,
 		LogLevel:            "debug",
 		AccessTokenLifespan: "5m",
@@ -60,7 +65,7 @@ func generateGCPHydraHandler(t *testing.T) http.Handler {
 	ctx := context.WithValue(context.Background(), goauth2.HTTPClient, http.DefaultClient)
 	ctx = gcp_jwt.NewContextJWT(ctx, &gcp_jwt.IAMSignJWTConfig{ServiceAccount: jwtConfig.Email})
 
-	return GenerateHydraHandler(ctx, c, cors.Options{})
+	return ctx, GenerateHydraHandler(ctx, c, cors.Options{})
 }
 
 func getHydraSDKClient(t *testing.T, client *http.Client, basePath string) *sdk.CodeGenSDK {
@@ -80,11 +85,11 @@ func getHydraSDKClient(t *testing.T, client *http.Client, basePath string) *sdk.
 }
 
 func TestIntegration(t *testing.T) {
-	hydra := generateGCPHydraHandler(t)
+	ctx, hydra := generateGCPHydraHandler(t)
 	ts := httptest.NewTLSServer(hydra)
 	defer ts.Close()
 	client := ts.Client()
-	ctx := context.WithValue(context.Background(), goauth2.HTTPClient, client)
+	ctx = context.WithValue(ctx, goauth2.HTTPClient, client)
 	hydraClient := getHydraSDKClient(t, client, ts.URL)
 
 	// TODO: Come up with some tests...
@@ -102,6 +107,52 @@ func TestIntegration(t *testing.T) {
 			}
 			if string(response) != `{"status":"ok"}` {
 				t.Errorf(`expected {"status":"ok"} but got %s instead`, response)
+			}
+		}
+	})
+
+	t.Run("TLS", func(t *testing.T) {
+		// Normal HTTP Request
+		req := httptest.NewRequest("", "/test", nil)
+		w := httptest.NewRecorder()
+		hydra.ServeHTTP(w, req)
+		if w.Code != http.StatusBadGateway {
+			t.Errorf("expected status code %d, got %d", http.StatusBadGateway, w.Code)
+		}
+
+		// TLS Terminated
+		req = httptest.NewRequest("", "/test", nil)
+		req.Header.Set("X-Forwarded-Proto", "https")
+		w = httptest.NewRecorder()
+		hydra.ServeHTTP(w, req)
+		if w.Code != http.StatusNotFound {
+			t.Errorf("expected status code %d, got %d", http.StatusNotFound, w.Code)
+		}
+	})
+
+	t.Run("JWK", func(t *testing.T) {
+		var lastRedirect string
+		var errRedirect = errors.New("cancel redirect")
+		client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+			lastRedirect = req.URL.String()
+			return errRedirect
+		}
+		defer func() {
+			client.CheckRedirect = nil
+		}()
+		jconfig, ok := gcp_jwt.FromContextJWT(ctx)
+		if !ok {
+			t.Errorf("could not get JWT config from context")
+			return
+		}
+
+		for _, path := range []string{jwk.WellKnownKeysPath} {
+			_, err := client.Get(ts.URL + path)
+			if err == nil || !strings.Contains(err.Error(), errRedirect.Error()) {
+				t.Fatalf("could not get to endpoint %s due to error %v", path, err)
+			}
+			if want := fmt.Sprintf("https://www.googleapis.com/service_accounts/v1/jwk/%s", jconfig.ServiceAccount); lastRedirect != want {
+				t.Errorf("wanted %s, got %s", want, lastRedirect)
 			}
 		}
 	})

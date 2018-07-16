@@ -103,6 +103,10 @@ func TestNewDatastoreConnection(t *testing.T) {
 					t.Errorf("DatastoreConnection.url = %s, want %s", want, tt.args.URL)
 					return
 				}
+				if want := con.Client(); want == nil {
+					t.Errorf("DatastoreConnection.Client() = nil, want *datastore.Client")
+					return
+				}
 			}
 		})
 	}

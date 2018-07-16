@@ -32,9 +32,11 @@ func injectConsentManager(c *config.Config, cm client.Manager) {
 
 	switch con := ctx.Connection.(type) {
 	case *config.MemoryConnection:
+		expectDependency(c.GetLogger(), ctx.FositeStore)
 		manager = consent.NewMemoryManager(ctx.FositeStore)
 		break
 	case *sqlcon.SQLConnection:
+		expectDependency(c.GetLogger(), ctx.FositeStore, con.GetDatabase())
 		manager = consent.NewSQLManager(con.GetDatabase(), cm, ctx.FositeStore)
 		break
 	case *config.PluginConnection:
@@ -44,6 +46,7 @@ func injectConsentManager(c *config.Config, cm client.Manager) {
 		}
 		break
 	case *dconfig.DatastoreConnection:
+		expectDependency(c.GetLogger(), ctx.FositeStore, con.Context(), con.Client())
 		manager = dconsent.NewDatastoreManager(con.Context(), con.Client(), con.Namespace(), cm, ctx.FositeStore)
 	default:
 		panic("Unknown connection type.")
@@ -59,10 +62,8 @@ func newConsentHandler(c *config.Config, router *httprouter.Router) *consent.Han
 	w := herodot.NewJSONWriter(c.GetLogger())
 	w.ErrorEnhancer = writerErrorEnhancer
 
-	h := &consent.Handler{
-		H: w,
-		M: ctx.ConsentManager,
-	}
+	expectDependency(c.GetLogger(), ctx.ConsentManager)
+	h := consent.NewHandler(w, ctx.ConsentManager)
 
 	h.SetRoutes(router)
 	return h

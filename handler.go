@@ -39,6 +39,8 @@ type Handler struct {
 	H       herodot.Writer
 }
 
+var errNilDependency = errors.New("A dependency was expected to be defined but is nil. Please open an issue with the stack trace.")
+
 func (h *Handler) registerRoutes(ctxx nctx.Context, router *httprouter.Router) {
 	c := h.Config
 	ctx := c.Context()
@@ -49,8 +51,8 @@ func (h *Handler) registerRoutes(ctxx nctx.Context, router *httprouter.Router) {
 
 	// Set up dependencies
 	clientsManager := newClientManager(c)
-	injectConsentManager(c, clientsManager)
 	injectFositeStore(c, clientsManager)
+	injectConsentManager(c, clientsManager)
 	oauth2Provider := newOAuth2Provider(ctxx, c)
 
 	// Set up handlers
