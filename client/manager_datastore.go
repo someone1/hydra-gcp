@@ -27,7 +27,6 @@ import (
 	"github.com/ory/fosite"
 	"github.com/ory/go-convenience/stringsx"
 	"github.com/ory/hydra/client"
-	"github.com/pborman/uuid"
 	"github.com/pkg/errors"
 	"gopkg.in/square/go-jose.v2"
 	"gopkg.in/square/go-jose.v2/json"
@@ -301,10 +300,6 @@ func (d *DatastoreManager) Authenticate(id string, secret []byte) (*client.Clien
 }
 
 func (d *DatastoreManager) CreateClient(c *client.Client) error {
-	if c.ID == "" {
-		c.ID = uuid.New()
-	}
-
 	h, err := d.hasher.Hash([]byte(c.Secret))
 	if err != nil {
 		return errors.WithStack(err)

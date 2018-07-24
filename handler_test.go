@@ -28,7 +28,8 @@ func TestStart(t *testing.T) {
 	router := httprouter.New()
 	h := &Handler{
 		Config: &config.Config{
-			DatabaseURL: "memory",
+			DatabaseURL:               "memory",
+			OAuth2AccessTokenStrategy: "opaque",
 		},
 	}
 	ctx := context.Background()

@@ -42,15 +42,16 @@ func generateGCPHydraHandler(t *testing.T) (context.Context, http.Handler) {
 	t.Helper()
 
 	c := &config.Config{
-		DatabaseURL:         os.Getenv("DATABASE_URL"),
-		SystemSecret:        os.Getenv("SYSTEM_SECRET"),
-		CookieSecret:        os.Getenv("SYSTEM_SECRET"),
-		Issuer:              os.Getenv("ISSUER"),
-		ConsentURL:          os.Getenv("CONSENT_URL"),
-		AllowTLSTermination: "0.0.0.0/0",
-		BCryptWorkFactor:    bcrypt.DefaultCost,
-		LogLevel:            "debug",
-		AccessTokenLifespan: "5m",
+		DatabaseURL:               os.Getenv("DATABASE_URL"),
+		SystemSecret:              os.Getenv("SYSTEM_SECRET"),
+		CookieSecret:              os.Getenv("SYSTEM_SECRET"),
+		Issuer:                    os.Getenv("ISSUER"),
+		ConsentURL:                os.Getenv("CONSENT_URL"),
+		OAuth2AccessTokenStrategy: "jwt",
+		AllowTLSTermination:       "0.0.0.0/0",
+		BCryptWorkFactor:          bcrypt.DefaultCost,
+		LogLevel:                  "debug",
+		AccessTokenLifespan:       "5m",
 	}
 
 	credsFile, err := ioutil.ReadFile(os.Getenv("GOOGLE_APPLICATION_CREDENTIALS"))

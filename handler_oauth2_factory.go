@@ -25,16 +25,18 @@ import (
 	"github.com/julienschmidt/httprouter"
 	"github.com/ory/fosite"
 	"github.com/ory/fosite/compose"
+	foauth2 "github.com/ory/fosite/handler/oauth2"
 	"github.com/ory/fosite/handler/openid"
 	"github.com/ory/herodot"
 	"github.com/ory/hydra/client"
 	"github.com/ory/hydra/config"
 	"github.com/ory/hydra/consent"
+	"github.com/ory/hydra/jwk"
 	"github.com/ory/hydra/oauth2"
 	"github.com/ory/hydra/pkg"
 	"github.com/ory/sqlcon"
 
-	foauth2 "github.com/someone1/fosite-gcp-oauth2"
+	fgoauth2 "github.com/someone1/fosite-gcp-oauth2"
 	dconfig "github.com/someone1/hydra-gcp/config"
 	doauth2 "github.com/someone1/hydra-gcp/oauth2"
 )
@@ -48,7 +50,7 @@ func injectFositeStore(c *config.Config, clients client.Manager) {
 		store = oauth2.NewFositeMemoryStore(clients, c.GetAccessTokenLifespan())
 	case *sqlcon.SQLConnection:
 		expectDependency(c.GetLogger(), con.GetDatabase())
-		store = oauth2.NewFositeSQLStore(clients, con.GetDatabase(), c.GetLogger(), c.GetAccessTokenLifespan())
+		store = oauth2.NewFositeSQLStore(clients, con.GetDatabase(), c.GetLogger(), c.GetAccessTokenLifespan(), c.OAuth2AccessTokenStrategy == "jwt")
 	case *config.PluginConnection:
 		var err error
 		if store, err = con.NewOAuth2Manager(clients); err != nil {
@@ -82,18 +84,29 @@ func newOAuth2Provider(ctxx context.Context, c *config.Config) fosite.OAuth2Prov
 		TokenURL:                       strings.TrimRight(c.Issuer, "/") + oauth2.TokenPath,
 	}
 
-	oauth2strat := foauth2.NewOAuth2GCPStrategy(ctxx, compose.NewOAuth2HMACStrategy(fc, c.GetSystemSecret()))
-	openidstrat := foauth2.NewOpenIDConnectStrategy(ctxx)
-	oauth2strat.Issuer = c.Issuer
-	openidstrat.Issuer = c.Issuer
+	oidcStrategy := fgoauth2.NewOpenIDConnectStrategy(ctxx)
+	oidcStrategy.Issuer = c.Issuer
+
+	var coreStrategy foauth2.CoreStrategy
+	hmacStrategy := compose.NewOAuth2HMACStrategy(fc, c.GetSystemSecret())
+
+	if c.OAuth2AccessTokenStrategy == "jwt" {
+		oauth2Strategy := fgoauth2.NewOAuth2GCPStrategy(ctxx, hmacStrategy)
+		oauth2Strategy.Issuer = c.Issuer
+		coreStrategy = oauth2Strategy
+	} else if c.OAuth2AccessTokenStrategy == "opaque" {
+		coreStrategy = hmacStrategy
+	} else {
+		c.GetLogger().Fatalf(`Environment variable OAUTH2_ACCESS_TOKEN_STRATEGY is set to "%s" but only "opaque" and "jwt" are valid values.`, c.OAuth2AccessTokenStrategy)
+	}
 
 	return compose.Compose(
 		fc,
 		store,
 		&compose.CommonStrategy{
-			CoreStrategy:               oauth2strat,
-			OpenIDConnectTokenStrategy: openidstrat,
-			JWTStrategy:                openidstrat.JWTStrategy,
+			CoreStrategy:               coreStrategy,
+			OpenIDConnectTokenStrategy: oidcStrategy,
+			JWTStrategy:                oidcStrategy.JWTStrategy,
 		},
 		nil,
 		compose.OAuth2AuthorizeExplicitFactory,
@@ -135,14 +148,19 @@ func newOAuth2Handler(ctx context.Context, c *config.Config, router *httprouter.
 	errorURL, err := url.Parse(c.ErrorURL)
 	pkg.Must(err, "Could not parse error url %s.", errorURL)
 
-	oidcStrategy := foauth2.NewOpenIDConnectStrategy(ctx)
+	oidcStrategy := fgoauth2.NewOpenIDConnectStrategy(ctx)
 	oidcStrategy.Issuer = c.Issuer
-
-	// jwtStrategy, err := jwk.NewRS256JWTStrategy(c.Context().KeyManager, oauth2.OpenIDConnectKeyName)
-	// pkg.Must(err, "Could not fetch private signing key for OpenID Connect - did you forget to run \"hydra migrate sql\" or forget to set the SYSTEM_SECRET?")
 
 	w := herodot.NewJSONWriter(c.GetLogger())
 	w.ErrorEnhancer = writerErrorEnhancer
+
+	var accessTokenJWTStrategy *jwk.RS256JWTStrategy
+
+	if c.OAuth2AccessTokenStrategy == "jwt" {
+		oauth2Strategy := fgoauth2.NewOAuth2GCPStrategy(ctx, nil)
+		oauth2Strategy.Issuer = c.Issuer
+		//accessTokenJWTStrategy = oauth2Strategy.JWTStrategy
+	}
 
 	handler := &oauth2.Handler{
 		ScopesSupported:  c.OpenIDDiscoveryScopesSupported,
@@ -165,8 +183,9 @@ func newOAuth2Handler(ctx context.Context, c *config.Config, router *httprouter.
 		AccessTokenLifespan: c.GetAccessTokenLifespan(),
 		CookieStore:         sessions.NewCookieStore(c.GetCookieSecret()),
 		IssuerURL:           c.Issuer,
-		//JWTStrategy:         oidcStrategy.JWTStrategy,
-		IDTokenLifespan: c.GetIDTokenLifespan(),
+		//OpenIDJWTStrategy:      oidcStrategy.JWTStrategy,
+		AccessTokenJWTStrategy: accessTokenJWTStrategy,
+		IDTokenLifespan:        c.GetIDTokenLifespan(),
 	}
 
 	handler.SetRoutes(router)
