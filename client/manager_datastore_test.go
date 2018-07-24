@@ -22,8 +22,9 @@ import (
 )
 
 type mockClientData struct {
-	SecretExpiresAt int `datastore:"csea"`
-	Version         int `datastore:"v"`
+	SecretExpiresAt int  `datastore:"csea"`
+	Version         int  `datastore:"v"`
+	Public          bool `datastore:"pub"`
 }
 
 func TestInterfaceType(t *testing.T) {
@@ -37,7 +38,7 @@ func TestClientDataLoad(t *testing.T) {
 	t.Parallel()
 	if m, ok := clientManagers["datastore"].(*DatastoreManager); ok {
 		key := m.createClientKey("client-upgrade-test")
-		mock := mockClientData{SecretExpiresAt: -1, Version: 1}
+		mock := mockClientData{SecretExpiresAt: -1, Version: 1, Public: true}
 		if _, err := m.client.Put(context.Background(), key, &mock); err != nil {
 			t.Errorf("could not store dummy data - %v", err)
 			return
@@ -56,7 +57,7 @@ func TestClientDataLoad(t *testing.T) {
 		if err := m.client.Get(context.Background(), key, &d); err != nil {
 			t.Errorf("cloud not get client data - %v", err)
 			return
-		} else if d.Version != hydraClientVersion {
+		} else if d.Version != hydraClientVersion || d.SecretExpiresAt != 0 || d.TokenEndpointAuthMethod != "none" {
 			t.Errorf("data not upgraded correctly")
 		}
 	} else {

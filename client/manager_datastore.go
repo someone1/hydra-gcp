@@ -42,7 +42,7 @@ const (
 	hydraClientKind         = "HydraClient"
 	hydraClientAncestorKind = "HydraClientAncestor"
 	hydraClientAncestorName = "default"
-	hydraClientVersion      = 2
+	hydraClientVersion      = 3
 )
 
 type clientData struct {
@@ -60,7 +60,6 @@ type clientData struct {
 	ClientURI                     string         `datastore:"curi"`
 	LogoURI                       string         `datastore:"luri"`
 	Contacts                      string         `datastore:"conts"`
-	Public                        bool           `datastore:"pub"`
 	SecretExpiresAt               int            `datastore:"csea"`
 	SectorIdentifierURI           string         `datastore:"siuri"`
 	JSONWebKeysURI                string         `datastore:"jwks_uri"`
@@ -84,6 +83,16 @@ func (c *clientData) LoadKey(k *datastore.Key) error {
 
 // Load is implemented for the PropertyLoadSaver interface, and performs schema migration if necessary
 func (c *clientData) Load(ps []datastore.Property) error {
+	var public = false
+	for idx := range ps {
+		if ps[idx].Name == "pub" {
+			if isPublic, ok := ps[idx].Value.(bool); ok && isPublic {
+				public = true
+			}
+			ps = append(ps[:idx], ps[idx+1:]...)
+		}
+	}
+
 	err := datastore.LoadStruct(c, ps)
 	if _, ok := err.(*datastore.ErrFieldMismatch); err != nil && !ok {
 		return errors.WithStack(err)
@@ -97,9 +106,11 @@ func (c *clientData) Load(ps []datastore.Property) error {
 		// Update to version 2 here
 		c.SecretExpiresAt = 0
 		fallthrough
-	// case 2:
-	// 	//update to version 3 here
-	// 	fallthrough
+	case 2:
+		if public {
+			c.TokenEndpointAuthMethod = "none"
+		}
+		fallthrough
 	case -1:
 		// This is here to complete saving the entity should we need to udpate it
 		if c.Version == -1 {
@@ -177,7 +188,6 @@ func clientDataFromClient(d *client.Client) (*clientData, error) {
 		ClientURI:                     d.ClientURI,
 		LogoURI:                       d.LogoURI,
 		Contacts:                      strings.Join(d.Contacts, "|"),
-		Public:                        d.Public,
 		SecretExpiresAt:               d.SecretExpiresAt,
 		SectorIdentifierURI:           d.SectorIdentifierURI,
 		JSONWebKeysURI:                d.JSONWebKeysURI,
@@ -205,7 +215,6 @@ func (c *clientData) toClient() (*client.Client, error) {
 		ClientURI:                     c.ClientURI,
 		LogoURI:                       c.LogoURI,
 		Contacts:                      stringsx.Splitx(c.Contacts, "|"),
-		Public:                        c.Public,
 		SecretExpiresAt:               c.SecretExpiresAt,
 		SectorIdentifierURI:           c.SectorIdentifierURI,
 		JSONWebKeysURI:                c.JSONWebKeysURI,
