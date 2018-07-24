@@ -77,7 +77,6 @@ type clientData struct {
 func (c *clientData) LoadKey(k *datastore.Key) error {
 	c.Key = k
 	c.ID = k.Name
-
 	return nil
 }
 
@@ -175,7 +174,7 @@ func clientDataFromClient(d *client.Client) (*clientData, error) {
 		jwks = string(out)
 	}
 	return &clientData{
-		ID:                            d.ID,
+		ID:                            d.GetID(),
 		Name:                          d.Name,
 		Secret:                        d.Secret,
 		RedirectURIs:                  strings.Join(d.RedirectURIs, "|"),
@@ -201,7 +200,6 @@ func clientDataFromClient(d *client.Client) (*clientData, error) {
 
 func (c *clientData) toClient() (*client.Client, error) {
 	cli := &client.Client{
-		ID:                            c.ID,
 		ClientID:                      c.ID,
 		Name:                          c.Name,
 		Secret:                        c.Secret,
@@ -260,7 +258,7 @@ func (d *DatastoreManager) GetClient(_ context.Context, id string) (fosite.Clien
 }
 
 func (d *DatastoreManager) UpdateClient(c *client.Client) error {
-	o, err := d.GetClient(d.context, c.ID)
+	o, err := d.GetClient(d.context, c.GetID())
 	if err != nil {
 		return errors.WithStack(err)
 	}

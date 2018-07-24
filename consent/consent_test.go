@@ -54,7 +54,7 @@ func mockConsentRequest(key string, remember bool, rememberFor int, hasError boo
 			Display:   "popup" + key,
 		},
 		RequestedAt:    time.Now().UTC().Add(-time.Hour),
-		Client:         &client.Client{ID: "client" + key},
+		Client:         &client.Client{ClientID: "client" + key},
 		Subject:        "subject" + key,
 		RequestURL:     "https://request-url/path" + key,
 		Skip:           skip,
@@ -101,7 +101,7 @@ func mockAuthRequest(key string, authAt bool) (c *AuthenticationRequest, h *Hand
 			Display:   "popup" + key,
 		},
 		RequestedAt:    time.Now().UTC().Add(-time.Hour),
-		Client:         &client.Client{ID: "client" + key},
+		Client:         &client.Client{ClientID: "client" + key},
 		Subject:        "subject" + key,
 		RequestURL:     "https://request-url/path" + key,
 		Skip:           true,
@@ -457,7 +457,7 @@ func TestManagers(t *testing.T) {
 }
 
 func compareAuthenticationRequest(t *testing.T, a, b *AuthenticationRequest) {
-	assert.EqualValues(t, a.Client.ID, b.Client.ID)
+	assert.EqualValues(t, a.Client.GetID(), b.Client.GetID())
 	assert.EqualValues(t, a.Challenge, b.Challenge)
 	assert.EqualValues(t, *a.OpenIDConnectContext, *b.OpenIDConnectContext)
 	assert.EqualValues(t, a.Subject, b.Subject)
@@ -469,7 +469,7 @@ func compareAuthenticationRequest(t *testing.T, a, b *AuthenticationRequest) {
 }
 
 func compareConsentRequest(t *testing.T, a, b *ConsentRequest) {
-	assert.EqualValues(t, a.Client.ID, b.Client.ID)
+	assert.EqualValues(t, a.Client.GetID(), b.Client.GetID())
 	assert.EqualValues(t, a.Challenge, b.Challenge)
 	assert.EqualValues(t, *a.OpenIDConnectContext, *b.OpenIDConnectContext)
 	assert.EqualValues(t, a.Subject, b.Subject)
