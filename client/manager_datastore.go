@@ -88,6 +88,7 @@ func (c *clientData) Load(ps []datastore.Property) error {
 				public = true
 			}
 			ps = append(ps[:idx], ps[idx+1:]...)
+			break
 		}
 	}
 
