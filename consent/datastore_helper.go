@@ -32,16 +32,18 @@ import (
 )
 
 const (
-	hydraConsentRequestKind                       = "HydraConsentRequest"
-	hydraConsentAunthenticationRequestKind        = "HydraConsentAuthenticationRequest"
-	hydraConsentRequestHandledKind                = "HydraConsentRequestHandled"
-	hydraConsentAunthenticationRequestHandledKind = "HydraConsentAuthenticationRequestHandled"
-	hydraConsentAunthenticationSessionKind        = "HydraConsentAuthenticationSession"
-	hydraAncestorName                             = "default"
-	consentVersion                                = 1
-	handleVersion                                 = 1
-	handleAuthVersion                             = 1
-	sessionVersion                                = 1
+	hydraConsentRequestKind                         = "HydraConsentRequest"
+	hydraConsentAunthenticationRequestKind          = "HydraConsentAuthenticationRequest"
+	hydraConsentRequestHandledKind                  = "HydraConsentRequestHandled"
+	hydraConsentAunthenticationRequestHandledKind   = "HydraConsentAuthenticationRequestHandled"
+	hydraConsentAunthenticationSessionKind          = "HydraConsentAuthenticationSession"
+	hydraConsentObfuscatedAuthenticationSessionKind = "HydraConsentObfuscatedAuthenticationSession"
+	hydraAncestorName                               = "default"
+	consentVersion                                  = 1
+	handleVersion                                   = 1
+	handleAuthVersion                               = 1
+	sessionVersion                                  = 1
+	consentAuthenticationVersion                    = 1
 )
 
 func toDateHack(t time.Time) *time.Time {
@@ -58,7 +60,7 @@ func fromDateHack(t *time.Time) time.Time {
 	return *t
 }
 
-type consentRequestData struct {
+type authenticationRequest struct {
 	Key                  *datastore.Key `datastore:"-"`
 	Challenge            string         `datastore:"-"`
 	Verifier             string         `datastore:"vfr"`
@@ -71,9 +73,17 @@ type consentRequestData struct {
 	AuthenticatedAt      *time.Time     `datastore:"aat"`
 	RequestedAt          time.Time      `datastore:"ra"`
 	OpenIDConnectContext string         `datastore:"oidcctx"`
+	LoginSessionID       string         `datastore:"lsi"`
 
 	Version int `datastore:"v"`
 	update  bool
+}
+
+type consentRequestData struct {
+	authenticationRequest
+
+	LoginChallenge          string `datastore:"lc"`
+	ForcedSubjectIdentifier string `datastore:"fsi"`
 }
 
 // LoadKey is implemented for the KeyLoader interface
@@ -123,6 +133,50 @@ func (c *consentRequestData) Save() ([]datastore.Property, error) {
 	return datastore.SaveStruct(c)
 }
 
+// LoadKey is implemented for the KeyLoader interface
+func (c *authenticationRequest) LoadKey(k *datastore.Key) error {
+	c.Key = k
+
+	return nil
+}
+
+// Load is implemented for the PropertyLoadSaver interface, and performs schema migration if necessary
+func (c *authenticationRequest) Load(ps []datastore.Property) error {
+	err := datastore.LoadStruct(c, ps)
+	if _, ok := err.(*datastore.ErrFieldMismatch); err != nil && !ok {
+		return errors.WithStack(err)
+	}
+
+	switch c.Version {
+	case consentAuthenticationVersion:
+		// Up to date, nothing to do
+		break
+	// case 1:
+	// 	// Update to version 2 here
+	// 	fallthrough
+	// case 2:
+	// 	//update to version 3 here
+	// 	fallthrough
+	case -1:
+		// This is here to complete saving the entity should we need to udpate it
+		if c.Version == -1 {
+			return errors.Errorf("unexpectedly got to version update trigger with incorrect version -1")
+		}
+		c.Version = consentAuthenticationVersion
+		c.update = true
+	default:
+		return errors.Errorf("got unexpected version %d when loading entity", c.Version)
+	}
+	return nil
+}
+
+// Save is implemented for the PropertyLoadSaver interface
+func (c *authenticationRequest) Save() ([]datastore.Property, error) {
+	c.Version = consentAuthenticationVersion
+
+	return datastore.SaveStruct(c)
+}
+
 func consentDataFromRequest(c *consent.ConsentRequest) (*consentRequestData, error) {
 	oidc, err := json.Marshal(c.OpenIDConnectContext)
 	if err != nil {
@@ -130,6 +184,32 @@ func consentDataFromRequest(c *consent.ConsentRequest) (*consentRequestData, err
 	}
 
 	return &consentRequestData{
+		authenticationRequest: authenticationRequest{
+			OpenIDConnectContext: string(oidc),
+			ClientID:             c.Client.GetID(),
+			Subject:              c.Subject,
+			RequestURL:           c.RequestURL,
+			Skip:                 c.Skip,
+			Challenge:            c.Challenge,
+			RequestedScope:       strings.Join(c.RequestedScope, "|"),
+			Verifier:             c.Verifier,
+			CSRF:                 c.CSRF,
+			AuthenticatedAt:      toDateHack(c.AuthenticatedAt),
+			RequestedAt:          c.RequestedAt,
+			LoginSessionID:       c.LoginSessionID,
+		},
+		LoginChallenge:          c.LoginChallenge,
+		ForcedSubjectIdentifier: c.ForceSubjectIdentifier,
+	}, nil
+}
+
+func authenticationDataFromRequest(c *consent.AuthenticationRequest) (*authenticationRequest, error) {
+	oidc, err := json.Marshal(c.OpenIDConnectContext)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+
+	return &authenticationRequest{
 		OpenIDConnectContext: string(oidc),
 		ClientID:             c.Client.GetID(),
 		Subject:              c.Subject,
@@ -141,13 +221,8 @@ func consentDataFromRequest(c *consent.ConsentRequest) (*consentRequestData, err
 		CSRF:                 c.CSRF,
 		AuthenticatedAt:      toDateHack(c.AuthenticatedAt),
 		RequestedAt:          c.RequestedAt,
+		LoginSessionID:       c.SessionID,
 	}, nil
-}
-
-func consentDataFromAuthenticationRequest(c *consent.AuthenticationRequest) (*consentRequestData, error) {
-	var cc consent.ConsentRequest
-	cc = consent.ConsentRequest(*c)
-	return consentDataFromRequest(&cc)
 }
 
 func (c *consentRequestData) toConsentRequest(client *client.Client) (*consent.ConsentRequest, error) {
@@ -157,6 +232,28 @@ func (c *consentRequestData) toConsentRequest(client *client.Client) (*consent.C
 	}
 
 	return &consent.ConsentRequest{
+		OpenIDConnectContext:   &oidc,
+		Client:                 client,
+		Subject:                c.Subject,
+		RequestURL:             c.RequestURL,
+		Skip:                   c.Skip,
+		Challenge:              c.Challenge,
+		RequestedScope:         stringsx.Splitx(c.RequestedScope, "|"),
+		Verifier:               c.Verifier,
+		CSRF:                   c.CSRF,
+		AuthenticatedAt:        fromDateHack(c.AuthenticatedAt),
+		ForceSubjectIdentifier: c.ForcedSubjectIdentifier,
+		RequestedAt:            c.RequestedAt,
+	}, nil
+}
+
+func (c *authenticationRequest) toAuthenticationRequest(client *client.Client) (*consent.AuthenticationRequest, error) {
+	var oidc consent.OpenIDConnectContext
+	if err := json.Unmarshal([]byte(c.OpenIDConnectContext), &oidc); err != nil {
+		return nil, errors.WithStack(err)
+	}
+
+	return &consent.AuthenticationRequest{
 		OpenIDConnectContext: &oidc,
 		Client:               client,
 		Subject:              c.Subject,
@@ -169,17 +266,6 @@ func (c *consentRequestData) toConsentRequest(client *client.Client) (*consent.C
 		AuthenticatedAt:      fromDateHack(c.AuthenticatedAt),
 		RequestedAt:          c.RequestedAt,
 	}, nil
-}
-
-func (c *consentRequestData) toAuthenticationRequest(client *client.Client) (*consent.AuthenticationRequest, error) {
-	cr, err := c.toConsentRequest(client)
-	if err != nil {
-		return nil, err
-	}
-
-	var ar consent.AuthenticationRequest
-	ar = consent.AuthenticationRequest(*cr)
-	return &ar, nil
 }
 
 type handledConsentRequestData struct {
@@ -328,16 +414,17 @@ func (h *handledConsentRequestData) toHandledConsentRequest(r *consent.ConsentRe
 }
 
 type handledAuthenticationConsentRequestData struct {
-	Key             *datastore.Key `datastore:"-"`
-	Remember        bool           `datastore:"rmbr"`
-	RememberFor     int            `datatstore:"rmbrf"`
-	ACR             string         `datastore:"acr"`
-	Subject         string         `datastore:"sub"`
-	Error           string         `datastore:"err"`
-	Challenge       string         `datastore:"-"`
-	RequestedAt     time.Time      `datastore:"rat"`
-	WasUsed         bool           `datastore:"wsu"`
-	AuthenticatedAt *time.Time     `db:"aat"`
+	Key                     *datastore.Key `datastore:"-"`
+	Remember                bool           `datastore:"rmbr"`
+	RememberFor             int            `datatstore:"rmbrf"`
+	ACR                     string         `datastore:"acr"`
+	Subject                 string         `datastore:"sub"`
+	Error                   string         `datastore:"err"`
+	Challenge               string         `datastore:"-"`
+	RequestedAt             time.Time      `datastore:"rat"`
+	WasUsed                 bool           `datastore:"wsu"`
+	AuthenticatedAt         *time.Time     `db:"aat"`
+	ForcedSubjectIdentifier string         `datastore:"fsi"`
 
 	Version int `datastore:"v"`
 	update  bool
@@ -402,15 +489,16 @@ func handledAuthenticationRequest(c *consent.HandledAuthenticationRequest) (*han
 	}
 
 	return &handledAuthenticationConsentRequestData{
-		ACR:             c.ACR,
-		Subject:         c.Subject,
-		Remember:        c.Remember,
-		RememberFor:     c.RememberFor,
-		Error:           e,
-		Challenge:       c.Challenge,
-		RequestedAt:     c.RequestedAt,
-		WasUsed:         c.WasUsed,
-		AuthenticatedAt: toDateHack(c.AuthenticatedAt),
+		ACR:                     c.ACR,
+		Subject:                 c.Subject,
+		Remember:                c.Remember,
+		RememberFor:             c.RememberFor,
+		Error:                   e,
+		Challenge:               c.Challenge,
+		RequestedAt:             c.RequestedAt,
+		WasUsed:                 c.WasUsed,
+		AuthenticatedAt:         toDateHack(c.AuthenticatedAt),
+		ForcedSubjectIdentifier: c.ForceSubjectIdentifier,
 	}, nil
 }
 
@@ -425,13 +513,14 @@ func (h *handledAuthenticationConsentRequestData) toHandledAuthenticationRequest
 	}
 
 	return &consent.HandledAuthenticationRequest{
-		RememberFor: h.RememberFor,
-		Remember:    h.Remember,
-		Challenge:   h.Challenge,
-		RequestedAt: h.RequestedAt,
-		WasUsed:     h.WasUsed,
-		ACR:         h.ACR,
-		Error:       e,
+		ForceSubjectIdentifier: h.ForcedSubjectIdentifier,
+		RememberFor:            h.RememberFor,
+		Remember:               h.Remember,
+		Challenge:              h.Challenge,
+		RequestedAt:            h.RequestedAt,
+		WasUsed:                h.WasUsed,
+		ACR:                    h.ACR,
+		Error:                  e,
 		AuthenticationRequest: a,
 		Subject:               h.Subject,
 		AuthenticatedAt:       fromDateHack(h.AuthenticatedAt),

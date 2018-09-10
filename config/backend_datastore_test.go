@@ -81,7 +81,8 @@ func TestNewDatastoreConnection(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			con, err := NewDatastoreConnection(tt.args.ctx, tt.args.URL, tt.args.l)
+			con := &DatastoreConnection{}
+			err := con.Init(tt.args.URL.String(), tt.args.l)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("NewDatastoreConnection() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -91,7 +92,7 @@ func TestNewDatastoreConnection(t *testing.T) {
 					t.Errorf("DatastoreConnection.Namespace() = %s, want %s", want, tt.fields.namespace)
 					return
 				}
-				if want := con.Context(); want != tt.fields.ctx {
+				if want := con.context; want != tt.fields.ctx {
 					t.Errorf("DatastoreConnection.Context() = %s, want %s", want, tt.fields.ctx)
 					return
 				}
@@ -103,7 +104,7 @@ func TestNewDatastoreConnection(t *testing.T) {
 					t.Errorf("DatastoreConnection.url = %s, want %s", want, tt.args.URL)
 					return
 				}
-				if want := con.Client(); want == nil {
+				if want := con.client; want == nil {
 					t.Errorf("DatastoreConnection.Client() = nil, want *datastore.Client")
 					return
 				}

@@ -14,7 +14,8 @@ lint:
 
 get:
 	go get -v -d -u -t ./...
-	# git -C ${GOPATH}/src/github.com/ory/hydra/ checkout --track origin/v1.0.0-beta.4
+	git -C ${GOPATH}/src/github.com/segmentio/analytics-go/ checkout --track origin/v3.0
+	git -C ${GOPATH}/src/github.com/ory/metrics-middleware checkout db3300574e48a229d5ddb1e30ea4adfd139d493a
 
 test:
 	go test ./...

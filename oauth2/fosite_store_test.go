@@ -26,18 +26,16 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"net/url"
 	"os"
 	"testing"
 	"time"
 
+	"cloud.google.com/go/datastore"
 	"github.com/ory/fosite"
 	"github.com/ory/hydra/client"
 	. "github.com/ory/hydra/oauth2"
 	"github.com/ory/hydra/pkg"
 	"github.com/sirupsen/logrus"
-
-	dconfig "github.com/someone1/hydra-gcp/config"
 )
 
 var fositeStores = map[string]pkg.FositeStorer{}
@@ -47,16 +45,14 @@ var clientManager = &client.MemoryManager{
 }
 
 func connectToDatastore() {
-	u, err := url.Parse("datastore://fosite-store-test?namespace=fosite-store-test")
-	if err != nil {
-		log.Fatalf("Could not parse DATABASE_URL: %s", err)
-	}
+	ctx := context.Background()
 
-	con, err := dconfig.NewDatastoreConnection(context.Background(), u, nil)
+	client, err := datastore.NewClient(ctx, "fosite-store-test")
 	if err != nil {
 		log.Fatalf("could not connect to database: %v", err)
 	}
-	s := NewFositeDatastoreStore(clientManager, con.Client(), con.Namespace(), logrus.New(), time.Hour)
+
+	s := NewFositeDatastoreStore(clientManager, client, "fosite-store-test", logrus.New(), time.Hour)
 
 	fositeStores["datastore"] = s
 }

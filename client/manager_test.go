@@ -26,29 +26,24 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"net/url"
 	"os"
 	"testing"
 
+	"cloud.google.com/go/datastore"
 	"github.com/ory/fosite"
 	. "github.com/ory/hydra/client"
-
-	dconfig "github.com/someone1/hydra-gcp/config"
 )
 
 var clientManagers = map[string]Manager{}
 
 func connectToDatastore() {
-	u, err := url.Parse("datastore://client-test?namespace=client-test")
-	if err != nil {
-		log.Fatalf("Could not parse DATABASE_URL: %s", err)
-	}
-
-	con, err := dconfig.NewDatastoreConnection(context.Background(), u, nil)
+	ctx := context.Background()
+	client, err := datastore.NewClient(ctx, "client-test")
 	if err != nil {
 		log.Fatalf("could not connect to database: %v", err)
 	}
-	s := NewDatastoreManager(con.Context(), con.Client(), con.Namespace(), &fosite.BCrypt{WorkFactor: 4})
+
+	s := NewDatastoreManager(ctx, client, "client-test", &fosite.BCrypt{WorkFactor: 4})
 
 	clientManagers["datastore"] = s
 }

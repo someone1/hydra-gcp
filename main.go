@@ -2,76 +2,48 @@ package hydragcp
 
 import (
 	"context"
+	"fmt"
 	"net/http"
-	"net/url"
 
 	"github.com/julienschmidt/httprouter"
-	negronilogrus "github.com/meatballhat/negroni-logrus"
 	"github.com/ory/herodot"
+	"github.com/ory/hydra/cmd/server"
 	"github.com/ory/hydra/config"
-	"github.com/ory/hydra/pkg"
-	"github.com/rs/cors"
-	"github.com/urfave/negroni"
+	"github.com/ory/hydra/jwk"
+	"github.com/someone1/gcp-jwt-go"
 
 	dconfig "github.com/someone1/hydra-gcp/config"
 )
 
+func init() {
+	config.RegisterBackend(&dconfig.DatastoreConnection{})
+}
+
 // GenerateHydraHandler will bootstrap Hydra and return a http.Handler for you to use.
-func GenerateHydraHandler(ctx context.Context, c *config.Config, corsOpts cors.Options) http.Handler {
-	router := httprouter.New()
-	logger := c.GetLogger()
-	w := herodot.NewJSONWriter(logger)
-	w.ErrorEnhancer = nil
-
-	serverHandler := &Handler{
-		Config: c,
-		H:      w,
-	}
-
-	// Let's Hijack the database options
-	if c.DatabaseURL != "" && c.DatabaseURL != "memory" {
-		u, err := url.Parse(c.DatabaseURL)
-		if err != nil {
-			c.GetLogger().Fatalf("Could not parse DATABASE_URL: %s", err)
-		}
-		if u.Scheme == "datastore" {
-			// Switch to a memory database and override with datastore options
-			c.GetLogger().Infof("Setting up Datastore connections...")
-			old := c.DatabaseURL
-			c.DatabaseURL = "memory"
-			gctx := c.Context()
-			c.DatabaseURL = old
-			dm, err := dconfig.NewDatastoreConnection(ctx, u, c.GetLogger())
-			if err != nil {
-				c.GetLogger().Fatal(err)
-			}
-			gctx.Connection = dm
-			c.GetLogger().Infof("Switched from memory database to datastore")
-		}
-	}
-
-	serverHandler.registerRoutes(ctx, router)
-
-	if !c.ForceHTTP {
-		if c.Issuer == "" {
-			logger.Fatalln("IssuerURL must be explicitly specified unless --dangerous-force-http is passed. To find out more, use `hydra help host`.")
-		}
-		issuer, err := url.Parse(c.Issuer)
-		pkg.Must(err, "Could not parse issuer URL: %s", err)
-		if issuer.Scheme != "https" {
-			logger.Fatalln("IssuerURL must use HTTPS unless --dangerous-force-http is passed. To find out more, use `hydra help host`.")
-		}
-	}
-
-	n := negroni.New()
-	n.Use(negronilogrus.NewMiddlewareFromLogger(logger, c.Issuer))
-	n.Use(c.GetPrometheusMetrics())
-
-	n.UseFunc(serverHandler.rejectInsecureRequests)
-	n.UseHandler(router)
-	corsHandler := cors.New(corsOpts).Handler(n)
-
+func GenerateHydraHandler(ctx context.Context, c *config.Config, h herodot.Writer, enableCors bool) (http.Handler, http.Handler) {
 	c.BuildVersion = "hydra-gcp"
+	handler := server.NewHandler(c, h)
 
-	return corsHandler
+	frontend := httprouter.New()
+	backend := httprouter.New()
+
+	handler.RegisterRoutes(frontend, backend)
+
+	enhancedFrontend := server.EnhanceRouter(c, nil, handler, frontend, nil, false)
+	enhanceBackend := server.EnhanceRouter(c, nil, handler, backend, nil, enableCors)
+
+	jwtConfig, ok := gcp_jwt.FromContextJWT(ctx)
+	if !ok {
+		panic("must send a context with a IAMSignJWTConfig embedded")
+	}
+
+	injectGCPOauth2(ctx, handler, c)
+
+	serveMux := http.NewServeMux()
+	serveMux.HandleFunc(jwk.WellKnownKeysPath, func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, fmt.Sprintf("https://www.googleapis.com/service_accounts/v1/jwk/%s", jwtConfig.ServiceAccount), http.StatusTemporaryRedirect)
+	})
+	serveMux.Handle("/", enhancedFrontend)
+
+	return serveMux, enhanceBackend
 }

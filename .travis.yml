@@ -2,32 +2,32 @@ language: go
 sudo: false
 
 go:
-- 1.10.x
-- tip
+  - 1.10.x
+  - 1.11.x
 
 env:
-- ISSUER="https://localhost:8080" DATABASE_URL="datastore://hydra-gcp-test?namspace=hydra&credentialsFile=$GOPATH/src/github.com/someone1/hydra-gcp/credentials.json" GOOGLE_APPLICATION_CREDENTIALS="$GOPATH/src/github.com/someone1/hydra-gcp/credentials.json" SYSTEM_SECRET="notsosecretnotsosecretnotsosecret" CONSENT_URL="http://localhost:8080/consent" OAUTH2_CLIENT_ID="admin" OAUTH2_CLIENT_SECRET="password"
+  - ISSUER="https://localhost:8080" DATABASE_URL="datastore://hydra-gcp-test?namspace=hydra&credentialsFile=$GOPATH/src/github.com/someone1/hydra-gcp/credentials.json" GOOGLE_APPLICATION_CREDENTIALS="$GOPATH/src/github.com/someone1/hydra-gcp/credentials.json" SYSTEM_SECRET="notsosecretnotsosecretnotsosecret" CONSENT_URL="http://localhost:8080/consent" OAUTH2_CLIENT_ID="admin" OAUTH2_CLIENT_SECRET="password"
 
 before_install:
-- openssl aes-256-cbc -K $encrypted_9ffc6e39c587_key -iv $encrypted_9ffc6e39c587_iv -in credentials.json.enc -out credentials.json -d
-- go get github.com/mattn/goveralls
-- go get github.com/alecthomas/gometalinter
+  - openssl aes-256-cbc -K $encrypted_9ffc6e39c587_key -iv $encrypted_9ffc6e39c587_iv -in credentials.json.enc -out credentials.json -d
+  - go get github.com/mattn/goveralls
+  - go get github.com/alecthomas/gometalinter
 
 install:
-- "$GOPATH/bin/gometalinter --install"
-- curl https://sdk.cloud.google.com > install.sh && chmod +x install.sh
-- "./install.sh --disable-prompts"
-- "$HOME/google-cloud-sdk/bin/gcloud components install beta --quiet"
-- "$HOME/google-cloud-sdk/bin/gcloud components install cloud-datastore-emulator --quiet"
-- "$HOME/google-cloud-sdk/bin/gcloud config set project hyda-gcp-test --quiet"
-- make get
+  - "$GOPATH/bin/gometalinter --install"
+  - curl https://sdk.cloud.google.com > install.sh && chmod +x install.sh
+  - "./install.sh --disable-prompts"
+  - "$HOME/google-cloud-sdk/bin/gcloud components install beta --quiet"
+  - "$HOME/google-cloud-sdk/bin/gcloud components install cloud-datastore-emulator --quiet"
+  - "$HOME/google-cloud-sdk/bin/gcloud config set project hyda-gcp-test --quiet"
+  - make get
 
 before_script:
-- "$HOME/google-cloud-sdk/bin/gcloud beta emulators datastore start --quiet &"
-- sleep 15
-- "$($HOME/google-cloud-sdk/bin/gcloud beta emulators datastore env-init)"
+  - "$HOME/google-cloud-sdk/bin/gcloud beta emulators datastore start --quiet &"
+  - sleep 15
+  - "$($HOME/google-cloud-sdk/bin/gcloud beta emulators datastore env-init)"
 
 script:
-- go test -v -covermode=count -coverprofile=coverage.out ./...
-- $GOPATH/bin/goveralls -coverprofile=coverage.out -service=travis-ci
-- make fmt vet build
+  - go test -coverprofile=coverage.out -covermode=count -coverpkg=$(go list ./... | grep -v '/vendor/' | paste -sd, -) ./...
+  - $GOPATH/bin/goveralls -coverprofile=coverage.out -service=travis-ci
+  - make fmt vet build

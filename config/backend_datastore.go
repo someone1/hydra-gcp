@@ -20,11 +20,21 @@ import (
 	"context"
 	"net/url"
 	"os"
+	"time"
 
 	"cloud.google.com/go/datastore"
+	"github.com/ory/fosite"
+	"github.com/ory/hydra/client"
+	"github.com/ory/hydra/consent"
+	"github.com/ory/hydra/jwk"
+	"github.com/ory/hydra/pkg"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/api/option"
+
+	dclient "github.com/someone1/hydra-gcp/client"
+	dconsent "github.com/someone1/hydra-gcp/consent"
+	"github.com/someone1/hydra-gcp/oauth2"
 )
 
 const (
@@ -42,18 +52,26 @@ type DatastoreConnection struct {
 	l       logrus.FieldLogger
 }
 
-// NewDatastoreConnection initializes and returns a DatastoreConnection
-func NewDatastoreConnection(ctx context.Context, URL *url.URL, l logrus.FieldLogger) (*DatastoreConnection, error) {
-	d := &DatastoreConnection{
-		context: ctx,
-		url:     URL,
-		l:       l,
+// Namespace will return the configured namespace for this backend, if any.
+func (d *DatastoreConnection) Namespace() string {
+	return d.url.Query().Get("namespace")
+}
+
+func (d *DatastoreConnection) Init(urlStr string, l logrus.FieldLogger) error {
+	ctx := context.Background()
+
+	URL, err := url.Parse(urlStr)
+	if err != nil {
+		return err
 	}
 
-	var err error
+	d.context = ctx
+	d.url = URL
+	d.l = l
+
 	var opts []option.ClientOption
 	if d.url.Scheme != datastoreScheme {
-		return nil, errors.New("incorrect scheme provided in URL")
+		return errors.New("incorrect scheme provided in URL")
 	}
 	urlOpts := d.url.Query()
 	emulated := os.Getenv("DATASTORE_EMULATOR_HOST")
@@ -62,22 +80,32 @@ func NewDatastoreConnection(ctx context.Context, URL *url.URL, l logrus.FieldLog
 	}
 
 	if d.client, err = datastore.NewClient(d.context, d.url.Host, opts...); err != nil {
-		return nil, errors.Wrap(err, "Could not Connect to Datastore")
+		return errors.Wrap(err, "Could not Connect to Datastore")
 	}
-	return d, nil
+	return nil
 }
 
-// Client will return a *datastore.Client
-func (d *DatastoreConnection) Client() *datastore.Client {
-	return d.client
+func (d *DatastoreConnection) NewConsentManager(clientManager client.Manager, fs pkg.FositeStorer) consent.Manager {
+	return dconsent.NewDatastoreManager(d.context, d.client, d.Namespace(), clientManager, fs)
 }
 
-// Namespace will return the configured namespace for this backend, if any.
-func (d *DatastoreConnection) Namespace() string {
-	return d.url.Query().Get("namespace")
+func (d *DatastoreConnection) NewOAuth2Manager(clientManager client.Manager, accessTokenLifespan time.Duration, _ string) pkg.FositeStorer {
+	return oauth2.NewFositeDatastoreStore(clientManager, d.client, d.Namespace(), d.l, accessTokenLifespan)
 }
 
-// Context will return the context.Context used to create this DatastoreConnection
-func (d *DatastoreConnection) Context() context.Context {
-	return d.context
+func (d *DatastoreConnection) NewClientManager(hasher fosite.Hasher) client.Manager {
+	return dclient.NewDatastoreManager(d.context, d.client, d.Namespace(), hasher)
+}
+
+func (d *DatastoreConnection) NewJWKManager(cipher *jwk.AEAD) jwk.Manager {
+	//TODO: Implement JWK
+	return &jwk.MemoryManager{}
+}
+
+func (d *DatastoreConnection) Prefixes() []string {
+	return []string{datastoreScheme}
+}
+
+func (d *DatastoreConnection) Ping() error {
+	return nil
 }

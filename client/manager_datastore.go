@@ -65,8 +65,10 @@ type clientData struct {
 	JSONWebKeys                   string         `datastore:"jwks"`
 	TokenEndpointAuthMethod       string         `datastore:"team"`
 	RequestURIs                   string         `datastore:"ruri"`
+	SubjectType                   string         `datastore:"subt"`
 	RequestObjectSigningAlgorithm string         `datastore:"rosa"`
 	UserinfoSignedResponseAlg     string         `datastore:"usra"`
+	AllowedCORSOrigins            string         `datastore:"acorso"`
 
 	Version int `datastore:"v"`
 	update  bool
@@ -195,6 +197,8 @@ func clientDataFromClient(d *client.Client) (*clientData, error) {
 		RequestURIs:                   strings.Join(d.RequestURIs, "|"),
 		RequestObjectSigningAlgorithm: d.RequestObjectSigningAlgorithm,
 		UserinfoSignedResponseAlg:     d.UserinfoSignedResponseAlg,
+		SubjectType:                   d.SubjectType,
+		AllowedCORSOrigins:            strings.Join(d.AllowedCORSOrigins, "|"),
 	}, nil
 }
 
@@ -220,6 +224,8 @@ func (c *clientData) toClient() (*client.Client, error) {
 		RequestURIs:                   stringsx.Splitx(c.RequestURIs, "|"),
 		RequestObjectSigningAlgorithm: c.RequestObjectSigningAlgorithm,
 		UserinfoSignedResponseAlg:     c.UserinfoSignedResponseAlg,
+		SubjectType:                   c.SubjectType,
+		AllowedCORSOrigins:            stringsx.Splitx(c.AllowedCORSOrigins, "|"),
 	}
 
 	if c.JSONWebKeys != "" {

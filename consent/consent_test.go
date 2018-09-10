@@ -26,11 +26,11 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"net/url"
 	"os"
 	"testing"
 	"time"
 
+	"cloud.google.com/go/datastore"
 	"github.com/ory/fosite"
 	"github.com/ory/hydra/client"
 	. "github.com/ory/hydra/consent"
@@ -38,8 +38,6 @@ import (
 	"github.com/ory/hydra/pkg"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	dconfig "github.com/someone1/hydra-gcp/config"
 )
 
 var clientManager = client.NewMemoryManager(&fosite.BCrypt{WorkFactor: 8})
@@ -141,16 +139,14 @@ func mockAuthRequest(key string, authAt bool) (c *AuthenticationRequest, h *Hand
 }
 
 func connectToDatastore(managers map[string]Manager, c client.Manager) {
-	u, err := url.Parse("datastore://consent-test?namespace=consent-test")
-	if err != nil {
-		log.Fatalf("Could not parse DATABASE_URL: %s", err)
-	}
+	ctx := context.Background()
 
-	con, err := dconfig.NewDatastoreConnection(context.Background(), u, nil)
+	client, err := datastore.NewClient(ctx, "consent-test")
 	if err != nil {
 		log.Fatalf("could not connect to database: %v", err)
 	}
-	s := NewDatastoreManager(con.Context(), con.Client(), con.Namespace(), c, fositeManager)
+
+	s := NewDatastoreManager(ctx, client, "consent-test", c, fositeManager)
 
 	managers["datastore"] = s
 }
@@ -283,8 +279,13 @@ func TestManagers(t *testing.T) {
 				} {
 					t.Run("key="+tc.keyC+"-"+tc.keyS, func(t *testing.T) {
 						rs, err := m.FindPreviouslyGrantedConsentRequests("client"+tc.keyC, "subject"+tc.keyS)
-						require.NoError(t, err)
-						assert.Len(t, rs, tc.expectedLength)
+						if tc.expectedLength == 0 {
+								assert.EqualError(t, err, ErrNoPreviousConsentFound.Error())
+							} else {
+								require.NoError(t, err)
+								assert.Len(t, rs, tc.expectedLength)
+							}
+
 					})
 				}
 			})
@@ -451,6 +452,88 @@ func TestManagers(t *testing.T) {
 						assert.False(t, found)
 					})
 				}
+			})
+		}
+	})
+
+	t.Run("case=list-handled-consent-requests", func(t *testing.T) {
+		for k, m := range managers {
+			cr1, hcr1 := mockConsentRequest("rv1", true, 0, false, false, false)
+			cr2, hcr2 := mockConsentRequest("rv2", false, 0, false, false, false)
+			clientManager.CreateClient(cr1.Client)
+			clientManager.CreateClient(cr2.Client)
+			require.NoError(t, m.CreateConsentRequest(cr1))
+			require.NoError(t, m.CreateConsentRequest(cr2))
+			_, err := m.HandleConsentRequest("challengerv1", hcr1)
+			require.NoError(t, err)
+			_, err = m.HandleConsentRequest("challengerv2", hcr2)
+			require.NoError(t, err)
+			t.Run("manager="+k, func(t *testing.T) {
+				for i, tc := range []struct {
+					subject    string
+					challenges []string
+					clients    []string
+				}{
+					{
+						subject:    "subjectrv1",
+						challenges: []string{"challengerv1"},
+						clients:    []string{"clientrv1"},
+					},
+					{
+						subject:    "subjectrv2",
+						challenges: []string{},
+						clients:    []string{},
+					},
+				} {
+					t.Run(fmt.Sprintf("case=%d/subject=%s", i, tc.subject), func(t *testing.T) {
+						consents, err := m.FindPreviouslyGrantedConsentRequestsByUser(tc.subject, 100, 0)
+						assert.Equal(t, len(tc.challenges), len(consents))
+
+						if len(tc.challenges) == 0 {
+							assert.EqualError(t, err, ErrNoPreviousConsentFound.Error())
+						} else {
+							require.NoError(t, err)
+							for _, consent := range consents {
+								assert.Contains(t, tc.challenges, consent.Challenge)
+								assert.Contains(t, tc.clients, consent.ConsentRequest.Client.ClientID)
+							}
+						}
+					})
+				}
+			})
+		}
+	})
+
+	t.Run("case=obfuscated", func(t *testing.T) {
+		for k, m := range managers {
+			t.Run(fmt.Sprintf("manager=%s", k), func(t *testing.T) {
+				got, err := m.GetForcedObfuscatedAuthenticationSession("client-1", "obfuscated-1")
+				require.EqualError(t, err, pkg.ErrNotFound.Error())
+
+				expect := &ForcedObfuscatedAuthenticationSession{
+					ClientID:          "client-1",
+					Subject:           "subject-1",
+					SubjectObfuscated: "obfuscated-1",
+				}
+				require.NoError(t, m.CreateForcedObfuscatedAuthenticationSession(expect))
+
+				got, err = m.GetForcedObfuscatedAuthenticationSession("client-1", "obfuscated-1")
+				require.NoError(t, err)
+				assert.EqualValues(t, expect, got)
+
+				expect = &ForcedObfuscatedAuthenticationSession{
+					ClientID:          "client-1",
+					Subject:           "subject-1",
+					SubjectObfuscated: "obfuscated-2",
+				}
+				require.NoError(t, m.CreateForcedObfuscatedAuthenticationSession(expect))
+
+				got, err = m.GetForcedObfuscatedAuthenticationSession("client-1", "obfuscated-2")
+				require.NoError(t, err)
+				assert.EqualValues(t, expect, got)
+
+				got, err = m.GetForcedObfuscatedAuthenticationSession("client-1", "obfuscated-1")
+				require.EqualError(t, err, pkg.ErrNotFound.Error())
 			})
 		}
 	})
