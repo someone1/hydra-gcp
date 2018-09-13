@@ -11,6 +11,7 @@ import (
 	"github.com/ory/hydra/config"
 	"github.com/ory/hydra/jwk"
 	"github.com/someone1/gcp-jwt-go"
+	"github.com/spf13/viper"
 
 	dconfig "github.com/someone1/hydra-gcp/config"
 )
@@ -21,6 +22,9 @@ func init() {
 
 // GenerateHydraHandler will bootstrap Hydra and return a http.Handler for you to use.
 func GenerateHydraHandler(ctx context.Context, c *config.Config, h herodot.Writer, enableCors bool) (http.Handler, http.Handler) {
+	viper.AutomaticEnv()
+	viper.Set("CORS_ENABLED", enableCors)
+
 	c.BuildVersion = "hydra-gcp"
 	handler := server.NewHandler(c, h)
 
