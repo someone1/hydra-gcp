@@ -40,7 +40,6 @@ var (
 // DatastoreManager is a Google Datastore implementation for oauth.ConsentRequestManager.
 type DatastoreManager struct {
 	client    *datastore.Client
-	context   context.Context
 	namespace string
 	manager   client.Manager
 	store     pkg.FositeStorer
@@ -87,31 +86,30 @@ func (d *DatastoreManager) createObfuscatedAuthSessionKey(client, subject string
 }
 
 // NewDatastoreManager initializes a new DatastoreManager with the given client
-func NewDatastoreManager(ctx context.Context, client *datastore.Client, namespace string, c client.Manager, store pkg.FositeStorer) *DatastoreManager {
+func NewDatastoreManager(client *datastore.Client, namespace string, c client.Manager, store pkg.FositeStorer) *DatastoreManager {
 	return &DatastoreManager{
 		client:    client,
-		context:   ctx,
 		namespace: namespace,
 		manager:   c,
 		store:     store,
 	}
 }
 
-func (d *DatastoreManager) RevokeUserConsentSession(user string) error {
-	return d.revokeConsentSession(user, "")
+func (d *DatastoreManager) RevokeUserConsentSession(ctx context.Context, user string) error {
+	return d.revokeConsentSession(ctx, user, "")
 }
 
-func (d *DatastoreManager) RevokeUserClientConsentSession(user, client string) error {
-	return d.revokeConsentSession(user, client)
+func (d *DatastoreManager) RevokeUserClientConsentSession(ctx context.Context, user, client string) error {
+	return d.revokeConsentSession(ctx, user, client)
 }
 
-func (d *DatastoreManager) revokeConsentSession(user, client string) error {
+func (d *DatastoreManager) revokeConsentSession(ctx context.Context, user, client string) error {
 	query := d.newQueryForKind(hydraConsentRequestKind).Filter("sub=", user).KeysOnly()
 	if client != "" {
 		query = query.Filter("cid=", client)
 	}
 
-	keys, err := d.client.GetAll(d.context, query, nil)
+	keys, err := d.client.GetAll(ctx, query, nil)
 	if err != nil {
 		return err
 	} else if len(keys) == 0 {
@@ -124,7 +122,7 @@ func (d *DatastoreManager) revokeConsentSession(user, client string) error {
 		handledKeys[idx] = d.createhandleConsentRequestKey(key.Name)
 	}
 
-	err = d.client.GetMulti(d.context, handledKeys, handledRequests)
+	err = d.client.GetMulti(ctx, handledKeys, handledRequests)
 	var merr datastore.MultiError = nil
 	var ok bool
 	if err != nil {
@@ -160,35 +158,35 @@ func (d *DatastoreManager) revokeConsentSession(user, client string) error {
 		return errors.WithStack(pkg.ErrNotFound)
 	}
 
-	err = d.client.DeleteMulti(d.context, toDelete)
+	err = d.client.DeleteMulti(ctx, toDelete)
 	return err
 }
 
-func (d *DatastoreManager) RevokeUserAuthenticationSession(subject string) error {
+func (d *DatastoreManager) RevokeUserAuthenticationSession(ctx context.Context, subject string) error {
 	query := d.newQueryForKind(hydraConsentAunthenticationSessionKind).Filter("sub=", subject).KeysOnly()
-	keys, err := d.client.GetAll(d.context, query, nil)
+	keys, err := d.client.GetAll(ctx, query, nil)
 	if err != nil {
 		return err
 	} else if len(keys) == 0 {
 		return errors.WithStack(pkg.ErrNotFound)
 	}
 
-	err = d.client.DeleteMulti(d.context, keys)
+	err = d.client.DeleteMulti(ctx, keys)
 
 	return err
 }
 
-func (d *DatastoreManager) CreateForcedObfuscatedAuthenticationSession(s *consent.ForcedObfuscatedAuthenticationSession) error {
+func (d *DatastoreManager) CreateForcedObfuscatedAuthenticationSession(ctx context.Context, s *consent.ForcedObfuscatedAuthenticationSession) error {
 	key := d.createObfuscatedAuthSessionKey(s.ClientID, s.Subject)
 	mutation := datastore.NewUpsert(key, s)
-	_, err := d.client.Mutate(d.context, mutation)
+	_, err := d.client.Mutate(ctx, mutation)
 	return err
 }
 
-func (d *DatastoreManager) GetForcedObfuscatedAuthenticationSession(client, obfuscated string) (*consent.ForcedObfuscatedAuthenticationSession, error) {
+func (d *DatastoreManager) GetForcedObfuscatedAuthenticationSession(ctx context.Context, client, obfuscated string) (*consent.ForcedObfuscatedAuthenticationSession, error) {
 	var o []consent.ForcedObfuscatedAuthenticationSession
 	query := d.newQueryForKind(hydraConsentObfuscatedAuthenticationSessionKind).Filter("ClientID=", client).Filter("SubjectObfuscated=", obfuscated)
-	_, err := d.client.GetAll(d.context, query, &o)
+	_, err := d.client.GetAll(ctx, query, &o)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
@@ -200,7 +198,7 @@ func (d *DatastoreManager) GetForcedObfuscatedAuthenticationSession(client, obfu
 	return &o[0], nil
 }
 
-func (d *DatastoreManager) CreateConsentRequest(c *consent.ConsentRequest) error {
+func (d *DatastoreManager) CreateConsentRequest(ctx context.Context, c *consent.ConsentRequest) error {
 	data, err := consentDataFromRequest(c)
 	if err != nil {
 		return err
@@ -209,17 +207,17 @@ func (d *DatastoreManager) CreateConsentRequest(c *consent.ConsentRequest) error
 	key := d.createConsentReqKey(data.Challenge)
 	mutation := datastore.NewInsert(key, data)
 
-	if _, err := d.client.Mutate(d.context, mutation); err != nil {
+	if _, err := d.client.Mutate(ctx, mutation); err != nil {
 		return errors.WithStack(err)
 	}
 	return nil
 }
 
-func (d *DatastoreManager) GetConsentRequest(challenge string) (*consent.ConsentRequest, error) {
+func (d *DatastoreManager) GetConsentRequest(ctx context.Context, challenge string) (*consent.ConsentRequest, error) {
 	var c consentRequestData
 	key := d.createConsentReqKey(challenge)
 
-	if err := d.client.Get(d.context, key, &c); err == datastore.ErrNoSuchEntity {
+	if err := d.client.Get(ctx, key, &c); err == datastore.ErrNoSuchEntity {
 		return nil, errors.WithStack(pkg.ErrNotFound)
 	} else if err != nil {
 		return nil, errors.WithStack(err)
@@ -227,13 +225,13 @@ func (d *DatastoreManager) GetConsentRequest(challenge string) (*consent.Consent
 
 	if c.update {
 		mutation := datastore.NewUpdate(key, &c)
-		if _, err := d.client.Mutate(d.context, mutation); err != nil {
+		if _, err := d.client.Mutate(ctx, mutation); err != nil {
 			return nil, errors.WithStack(err)
 		}
 		c.update = false
 	}
 
-	m, err := d.manager.GetConcreteClient(c.ClientID)
+	m, err := d.manager.GetConcreteClient(ctx, c.ClientID)
 	if err != nil {
 		return nil, err
 	}
@@ -241,7 +239,7 @@ func (d *DatastoreManager) GetConsentRequest(challenge string) (*consent.Consent
 	return c.toConsentRequest(m)
 }
 
-func (d *DatastoreManager) CreateAuthenticationRequest(c *consent.AuthenticationRequest) error {
+func (d *DatastoreManager) CreateAuthenticationRequest(ctx context.Context, c *consent.AuthenticationRequest) error {
 	data, err := authenticationDataFromRequest(c)
 	if err != nil {
 		return err
@@ -250,17 +248,17 @@ func (d *DatastoreManager) CreateAuthenticationRequest(c *consent.Authentication
 	key := d.createConsentAuthReqKey(data.Challenge)
 	mutation := datastore.NewInsert(key, data)
 
-	if _, err := d.client.Mutate(d.context, mutation); err != nil {
+	if _, err := d.client.Mutate(ctx, mutation); err != nil {
 		return errors.WithStack(err)
 	}
 	return nil
 }
 
-func (d *DatastoreManager) GetAuthenticationRequest(challenge string) (*consent.AuthenticationRequest, error) {
+func (d *DatastoreManager) GetAuthenticationRequest(ctx context.Context, challenge string) (*consent.AuthenticationRequest, error) {
 	var c consentRequestData
 	key := d.createConsentAuthReqKey(challenge)
 
-	if err := d.client.Get(d.context, key, &c); err == datastore.ErrNoSuchEntity {
+	if err := d.client.Get(ctx, key, &c); err == datastore.ErrNoSuchEntity {
 		return nil, errors.WithStack(pkg.ErrNotFound)
 	} else if err != nil {
 		return nil, errors.WithStack(err)
@@ -268,13 +266,13 @@ func (d *DatastoreManager) GetAuthenticationRequest(challenge string) (*consent.
 
 	if c.update {
 		mutation := datastore.NewUpdate(key, &c)
-		if _, err := d.client.Mutate(d.context, mutation); err != nil {
+		if _, err := d.client.Mutate(ctx, mutation); err != nil {
 			return nil, errors.WithStack(err)
 		}
 		c.update = false
 	}
 
-	m, err := d.manager.GetConcreteClient(c.ClientID)
+	m, err := d.manager.GetConcreteClient(ctx, c.ClientID)
 	if err != nil {
 		return nil, err
 	}
@@ -282,7 +280,7 @@ func (d *DatastoreManager) GetAuthenticationRequest(challenge string) (*consent.
 	return c.toAuthenticationRequest(m)
 }
 
-func (d *DatastoreManager) HandleConsentRequest(challenge string, r *consent.HandledConsentRequest) (*consent.ConsentRequest, error) {
+func (d *DatastoreManager) HandleConsentRequest(ctx context.Context, challenge string, r *consent.HandledConsentRequest) (*consent.ConsentRequest, error) {
 	data, err := handledConsentRequest(r)
 	if err != nil {
 		return nil, err
@@ -291,19 +289,19 @@ func (d *DatastoreManager) HandleConsentRequest(challenge string, r *consent.Han
 	key := d.createhandleConsentRequestKey(data.Challenge)
 	mutation := datastore.NewInsert(key, data)
 
-	if _, err := d.client.Mutate(d.context, mutation); err != nil {
+	if _, err := d.client.Mutate(ctx, mutation); err != nil {
 		return nil, errors.WithStack(err)
 	}
-	return d.GetConsentRequest(challenge)
+	return d.GetConsentRequest(ctx, challenge)
 }
 
-func (d *DatastoreManager) VerifyAndInvalidateConsentRequest(verifier string) (*consent.HandledConsentRequest, error) {
+func (d *DatastoreManager) VerifyAndInvalidateConsentRequest(ctx context.Context, verifier string) (*consent.HandledConsentRequest, error) {
 	var consentRequest consentRequestData
 	var queryResults []consentRequestData
 	var handledRequest handledConsentRequestData
 
 	query := d.newQueryForKind(hydraConsentRequestKind).Filter("vfr=", verifier)
-	_, err := d.client.GetAll(d.context, query, &queryResults)
+	_, err := d.client.GetAll(ctx, query, &queryResults)
 	if err != nil {
 		return nil, err
 	} else if len(queryResults) != 1 {
@@ -312,7 +310,7 @@ func (d *DatastoreManager) VerifyAndInvalidateConsentRequest(verifier string) (*
 	consentRequest = queryResults[0]
 
 	key := d.createhandleConsentRequestKey(consentRequest.Challenge)
-	if err := d.client.Get(d.context, key, &handledRequest); err == datastore.ErrNoSuchEntity {
+	if err := d.client.Get(ctx, key, &handledRequest); err == datastore.ErrNoSuchEntity {
 		return nil, errors.WithStack(pkg.ErrNotFound)
 	} else if err != nil {
 		return nil, errors.WithStack(err)
@@ -322,7 +320,7 @@ func (d *DatastoreManager) VerifyAndInvalidateConsentRequest(verifier string) (*
 		return nil, errors.WithStack(fosite.ErrInvalidRequest.WithDebug("Consent verifier has been used already"))
 	}
 
-	r, err := d.GetConsentRequest(consentRequest.Challenge)
+	r, err := d.GetConsentRequest(ctx, consentRequest.Challenge)
 	if err != nil {
 		return nil, err
 	}
@@ -330,14 +328,14 @@ func (d *DatastoreManager) VerifyAndInvalidateConsentRequest(verifier string) (*
 	handledRequest.WasUsed = true
 	mutation := datastore.NewUpdate(key, &handledRequest)
 
-	if _, err := d.client.Mutate(d.context, mutation); err != nil {
+	if _, err := d.client.Mutate(ctx, mutation); err != nil {
 		return nil, errors.WithStack(err)
 	}
 
 	return handledRequest.toHandledConsentRequest(r)
 }
 
-func (d *DatastoreManager) HandleAuthenticationRequest(challenge string, r *consent.HandledAuthenticationRequest) (*consent.AuthenticationRequest, error) {
+func (d *DatastoreManager) HandleAuthenticationRequest(ctx context.Context, challenge string, r *consent.HandledAuthenticationRequest) (*consent.AuthenticationRequest, error) {
 	data, err := handledAuthenticationRequest(r)
 	if err != nil {
 		return nil, err
@@ -346,20 +344,20 @@ func (d *DatastoreManager) HandleAuthenticationRequest(challenge string, r *cons
 	key := d.createhandleConsentAuthenticationRequestKey(challenge)
 	mutation := datastore.NewInsert(key, data)
 
-	if _, err := d.client.Mutate(d.context, mutation); err != nil {
+	if _, err := d.client.Mutate(ctx, mutation); err != nil {
 		return nil, errors.WithStack(err)
 	}
 
-	return d.GetAuthenticationRequest(challenge)
+	return d.GetAuthenticationRequest(ctx, challenge)
 }
 
-func (d *DatastoreManager) VerifyAndInvalidateAuthenticationRequest(verifier string) (*consent.HandledAuthenticationRequest, error) {
+func (d *DatastoreManager) VerifyAndInvalidateAuthenticationRequest(ctx context.Context, verifier string) (*consent.HandledAuthenticationRequest, error) {
 	var authReqData consentRequestData
 	var queryResults []consentRequestData
 	var handledAuthReqData handledAuthenticationConsentRequestData
 
 	query := d.newQueryForKind(hydraConsentAunthenticationRequestKind).Filter("vfr=", verifier)
-	_, err := d.client.GetAll(d.context, query, &queryResults)
+	_, err := d.client.GetAll(ctx, query, &queryResults)
 	if err != nil {
 		return nil, err
 	} else if len(queryResults) != 1 {
@@ -368,7 +366,7 @@ func (d *DatastoreManager) VerifyAndInvalidateAuthenticationRequest(verifier str
 	authReqData = queryResults[0]
 
 	key := d.createhandleConsentAuthenticationRequestKey(authReqData.Challenge)
-	if err := d.client.Get(d.context, key, &handledAuthReqData); err == datastore.ErrNoSuchEntity {
+	if err := d.client.Get(ctx, key, &handledAuthReqData); err == datastore.ErrNoSuchEntity {
 		return nil, errors.WithStack(pkg.ErrNotFound)
 	} else if err != nil {
 		return nil, errors.WithStack(err)
@@ -381,11 +379,11 @@ func (d *DatastoreManager) VerifyAndInvalidateAuthenticationRequest(verifier str
 	handledAuthReqData.WasUsed = true
 	mutation := datastore.NewUpdate(key, &handledAuthReqData)
 
-	if _, err := d.client.Mutate(d.context, mutation); err != nil {
+	if _, err := d.client.Mutate(ctx, mutation); err != nil {
 		return nil, errors.WithStack(err)
 	}
 
-	r, err := d.GetAuthenticationRequest(authReqData.Challenge)
+	r, err := d.GetAuthenticationRequest(ctx, authReqData.Challenge)
 	if err != nil {
 		return nil, err
 	}
@@ -393,11 +391,11 @@ func (d *DatastoreManager) VerifyAndInvalidateAuthenticationRequest(verifier str
 	return handledAuthReqData.toHandledAuthenticationRequest(r)
 }
 
-func (d *DatastoreManager) GetAuthenticationSession(id string) (*consent.AuthenticationSession, error) {
+func (d *DatastoreManager) GetAuthenticationSession(ctx context.Context, id string) (*consent.AuthenticationSession, error) {
 	var a authenticationSession
 
 	key := d.createAuthSessionKey(id)
-	if err := d.client.Get(d.context, key, &a); err == datastore.ErrNoSuchEntity {
+	if err := d.client.Get(ctx, key, &a); err == datastore.ErrNoSuchEntity {
 		return nil, errors.WithStack(pkg.ErrNotFound)
 	} else if err != nil {
 		return nil, errors.WithStack(err)
@@ -406,36 +404,36 @@ func (d *DatastoreManager) GetAuthenticationSession(id string) (*consent.Authent
 	return a.toAuthenticationSession(), nil
 }
 
-func (d *DatastoreManager) CreateAuthenticationSession(a *consent.AuthenticationSession) error {
+func (d *DatastoreManager) CreateAuthenticationSession(ctx context.Context, a *consent.AuthenticationSession) error {
 	data := fromAuthenticationSession(a)
 
 	key := d.createAuthSessionKey(data.ID)
 	mutation := datastore.NewInsert(key, data)
 
-	if _, err := d.client.Mutate(d.context, mutation); err != nil {
+	if _, err := d.client.Mutate(ctx, mutation); err != nil {
 		return errors.WithStack(err)
 	}
 
 	return nil
 }
 
-func (d *DatastoreManager) DeleteAuthenticationSession(id string) error {
+func (d *DatastoreManager) DeleteAuthenticationSession(ctx context.Context, id string) error {
 	key := d.createAuthSessionKey(id)
 	mutation := datastore.NewDelete(key)
 
-	if _, err := d.client.Mutate(d.context, mutation); err != nil {
+	if _, err := d.client.Mutate(ctx, mutation); err != nil {
 		return errors.WithStack(err)
 	}
 
 	return nil
 }
 
-func (d *DatastoreManager) FindPreviouslyGrantedConsentRequests(client string, subject string) ([]consent.HandledConsentRequest, error) {
+func (d *DatastoreManager) FindPreviouslyGrantedConsentRequests(ctx context.Context, client string, subject string) ([]consent.HandledConsentRequest, error) {
 	var a []handledConsentRequestData
 	var consentReqs []consentRequestData
 
 	query := d.newQueryForKind(hydraConsentRequestKind).Filter("cid=", client).Filter("sub=", subject).Filter("skip=", false)
-	_, err := d.client.GetAll(d.context, query, &consentReqs)
+	_, err := d.client.GetAll(ctx, query, &consentReqs)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
@@ -446,7 +444,7 @@ func (d *DatastoreManager) FindPreviouslyGrantedConsentRequests(client string, s
 	}
 
 	handledReqs := make([]handledConsentRequestData, len(keys))
-	err = d.client.GetMulti(d.context, keys, handledReqs)
+	err = d.client.GetMulti(ctx, keys, handledReqs)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
@@ -457,15 +455,15 @@ func (d *DatastoreManager) FindPreviouslyGrantedConsentRequests(client string, s
 		}
 	}
 
-	return d.resolveHandledConsentRequests(a)
+	return d.resolveHandledConsentRequests(ctx, a)
 }
 
-func (d *DatastoreManager) FindPreviouslyGrantedConsentRequestsByUser(subject string, limit, offset int) ([]consent.HandledConsentRequest, error) {
+func (d *DatastoreManager) FindPreviouslyGrantedConsentRequestsByUser(ctx context.Context, subject string, limit, offset int) ([]consent.HandledConsentRequest, error) {
 	var a []handledConsentRequestData
 	var consentReqs []consentRequestData
 
 	query := d.newQueryForKind(hydraConsentRequestKind).Filter("sub=", subject).Filter("skip=", false)
-	_, err := d.client.GetAll(d.context, query, &consentReqs)
+	_, err := d.client.GetAll(ctx, query, &consentReqs)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
@@ -476,7 +474,7 @@ func (d *DatastoreManager) FindPreviouslyGrantedConsentRequestsByUser(subject st
 	}
 
 	handledReqs := make([]handledConsentRequestData, len(keys))
-	err = d.client.GetMulti(d.context, keys, handledReqs)
+	err = d.client.GetMulti(ctx, keys, handledReqs)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
@@ -487,7 +485,7 @@ func (d *DatastoreManager) FindPreviouslyGrantedConsentRequestsByUser(subject st
 		}
 	}
 
-	aa, aerr := d.resolveHandledConsentRequests(a)
+	aa, aerr := d.resolveHandledConsentRequests(ctx, a)
 	if aerr != nil {
 		return nil, aerr
 	}
@@ -500,10 +498,10 @@ func (d *DatastoreManager) FindPreviouslyGrantedConsentRequestsByUser(subject st
 	return aa[start:end], nil
 }
 
-func (d *DatastoreManager) resolveHandledConsentRequests(requests []handledConsentRequestData) ([]consent.HandledConsentRequest, error) {
+func (d *DatastoreManager) resolveHandledConsentRequests(ctx context.Context, requests []handledConsentRequestData) ([]consent.HandledConsentRequest, error) {
 	var aa []consent.HandledConsentRequest
 	for _, v := range requests {
-		r, err := d.GetConsentRequest(v.Challenge)
+		r, err := d.GetConsentRequest(ctx, v.Challenge)
 		if err != nil {
 			return nil, err
 		} else if errors.Cause(err) == pkg.ErrNotFound {
