@@ -65,12 +65,12 @@ func generateGCPHydraHandler(t *testing.T) (context.Context, http.Handler, http.
 		t.Fatalf("could not get jwt config: %v", err)
 	}
 	ctx := context.WithValue(context.Background(), goauth2.HTTPClient, http.DefaultClient)
-	ctx = gcp_jwt.NewContextJWT(ctx, &gcp_jwt.IAMSignJWTConfig{ServiceAccount: jwtConfig.Email})
+	config := &gcpjwt.IAMConfig{ServiceAccount: jwtConfig.Email}
 
 	logger := c.GetLogger()
 	w := herodot.NewJSONWriter(logger)
 
-	f, b := GenerateHydraHandler(ctx, c, w, false)
+	f, b := GenerateIAMHydraHandler(ctx, c, config, w, false)
 
 	return ctx, f, b
 }
@@ -156,7 +156,7 @@ func TestIntegration(t *testing.T) {
 		defer func() {
 			client.CheckRedirect = nil
 		}()
-		jconfig, ok := gcp_jwt.FromContextJWT(ctx)
+		jconfig, ok := gcpjwt.IAMFromContext(ctx)
 		if !ok {
 			t.Errorf("could not get JWT config from context")
 			return

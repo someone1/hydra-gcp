@@ -13,7 +13,7 @@ lint:
 	fi
 
 get:
-	go get -v -d -u -t ./...
+	go get -v -d -t ./...
 	git -C ${GOPATH}/src/github.com/segmentio/analytics-go/ checkout --track origin/v3.0
 	git -C ${GOPATH}/src/github.com/ory/metrics-middleware checkout db3300574e48a229d5ddb1e30ea4adfd139d493a
 
@@ -22,6 +22,9 @@ test:
 
 test-race:
 	go test -race ./...
+
+test-coverage:
+	go test -coverprofile=coverage.out -covermode=count -coverpkg=$(shell go list ./... | grep -v '/vendor/' | paste -sd, -) ./...
 
 vet:
 	@if [ "`go vet ./... | tee /dev/stderr`" ]; then \

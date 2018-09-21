@@ -28,6 +28,6 @@ before_script:
   - "$($HOME/google-cloud-sdk/bin/gcloud beta emulators datastore env-init)"
 
 script:
-  - go test -coverprofile=coverage.out -covermode=count -coverpkg=$(go list ./... | grep -v '/vendor/' | paste -sd, -) ./...
+  - make test-coverage
   - $GOPATH/bin/goveralls -coverprofile=coverage.out -service=travis-ci
   - make fmt vet build
