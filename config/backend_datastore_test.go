@@ -92,10 +92,6 @@ func TestNewDatastoreConnection(t *testing.T) {
 					t.Errorf("DatastoreConnection.Namespace() = %s, want %s", want, tt.fields.namespace)
 					return
 				}
-				if want := con.context; want != tt.fields.ctx {
-					t.Errorf("DatastoreConnection.Context() = %s, want %s", want, tt.fields.ctx)
-					return
-				}
 				if want := con.l; want != tt.args.l {
 					t.Errorf("DatastoreConnection.l = %v, want %v", want, tt.args.l)
 					return

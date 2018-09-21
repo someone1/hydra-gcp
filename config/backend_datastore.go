@@ -46,10 +46,9 @@ const (
 
 // DatastoreConnection enables the use of Google's Datastore as a backend.
 type DatastoreConnection struct {
-	client  *datastore.Client
-	context context.Context
-	url     *url.URL
-	l       logrus.FieldLogger
+	client *datastore.Client
+	url    *url.URL
+	l      logrus.FieldLogger
 }
 
 // Namespace will return the configured namespace for this backend, if any.
@@ -65,7 +64,6 @@ func (d *DatastoreConnection) Init(urlStr string, l logrus.FieldLogger) error {
 		return err
 	}
 
-	d.context = ctx
 	d.url = URL
 	d.l = l
 
@@ -79,14 +77,14 @@ func (d *DatastoreConnection) Init(urlStr string, l logrus.FieldLogger) error {
 		opts = append(opts, option.WithCredentialsFile(urlOpts.Get("credentialsFile")))
 	}
 
-	if d.client, err = datastore.NewClient(d.context, d.url.Host, opts...); err != nil {
+	if d.client, err = datastore.NewClient(ctx, d.url.Host, opts...); err != nil {
 		return errors.Wrap(err, "Could not Connect to Datastore")
 	}
 	return nil
 }
 
 func (d *DatastoreConnection) NewConsentManager(clientManager client.Manager, fs pkg.FositeStorer) consent.Manager {
-	return dconsent.NewDatastoreManager(d.context, d.client, d.Namespace(), clientManager, fs)
+	return dconsent.NewDatastoreManager(d.client, d.Namespace(), clientManager, fs)
 }
 
 func (d *DatastoreConnection) NewOAuth2Manager(clientManager client.Manager, accessTokenLifespan time.Duration, _ string) pkg.FositeStorer {
@@ -94,7 +92,7 @@ func (d *DatastoreConnection) NewOAuth2Manager(clientManager client.Manager, acc
 }
 
 func (d *DatastoreConnection) NewClientManager(hasher fosite.Hasher) client.Manager {
-	return dclient.NewDatastoreManager(d.context, d.client, d.Namespace(), hasher)
+	return dclient.NewDatastoreManager(d.client, d.Namespace(), hasher)
 }
 
 func (d *DatastoreConnection) NewJWKManager(cipher *jwk.AEAD) jwk.Manager {
