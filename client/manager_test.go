@@ -43,7 +43,7 @@ func connectToDatastore() {
 		log.Fatalf("could not connect to database: %v", err)
 	}
 
-	s := NewDatastoreManager(ctx, client, "client-test", &fosite.BCrypt{WorkFactor: 4})
+	s := NewDatastoreManager(client, "client-test", &fosite.BCrypt{WorkFactor: 4})
 
 	clientManagers["datastore"] = s
 }

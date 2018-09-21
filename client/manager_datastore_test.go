@@ -45,7 +45,7 @@ func TestClientDataLoad(t *testing.T) {
 		}
 		defer m.client.Delete(context.Background(), key)
 
-		if client, err := m.GetConcreteClient(key.Name); err != nil {
+		if client, err := m.GetConcreteClient(context.Background(), key.Name); err != nil {
 			t.Errorf("error getting data - %v", err)
 			return
 		} else if client.SecretExpiresAt != 0 {

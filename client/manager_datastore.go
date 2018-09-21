@@ -140,11 +140,10 @@ type DatastoreManager struct {
 }
 
 // NewDatastoreManager initializes a new DatastoreManager with the given client
-func NewDatastoreManager(ctx context.Context, client *datastore.Client, namespace string, h fosite.Hasher) *DatastoreManager {
+func NewDatastoreManager(client *datastore.Client, namespace string, h fosite.Hasher) *DatastoreManager {
 	return &DatastoreManager{
 		hasher:    h,
 		client:    client,
-		context:   ctx,
 		namespace: namespace,
 	}
 }
@@ -238,11 +237,11 @@ func (c *clientData) toClient() (*client.Client, error) {
 	return cli, nil
 }
 
-func (d *DatastoreManager) GetConcreteClient(id string) (*client.Client, error) {
+func (d *DatastoreManager) GetConcreteClient(ctx context.Context, id string) (*client.Client, error) {
 	var cd clientData
 	key := d.createClientKey(id)
 
-	if err := d.client.Get(d.context, key, &cd); err == datastore.ErrNoSuchEntity {
+	if err := d.client.Get(ctx, key, &cd); err == datastore.ErrNoSuchEntity {
 		return nil, errors.Errorf("Unable to find client %s", id)
 	} else if err != nil {
 		return nil, errors.WithStack(err)
@@ -250,7 +249,7 @@ func (d *DatastoreManager) GetConcreteClient(id string) (*client.Client, error) 
 
 	if cd.update {
 		mutation := datastore.NewUpdate(key, &cd)
-		if _, err := d.client.Mutate(d.context, mutation); err != nil {
+		if _, err := d.client.Mutate(ctx, mutation); err != nil {
 			return nil, errors.WithStack(err)
 		}
 		cd.update = false
@@ -259,12 +258,12 @@ func (d *DatastoreManager) GetConcreteClient(id string) (*client.Client, error) 
 	return cd.toClient()
 }
 
-func (d *DatastoreManager) GetClient(_ context.Context, id string) (fosite.Client, error) {
-	return d.GetConcreteClient(id)
+func (d *DatastoreManager) GetClient(ctx context.Context, id string) (fosite.Client, error) {
+	return d.GetConcreteClient(ctx, id)
 }
 
-func (d *DatastoreManager) UpdateClient(c *client.Client) error {
-	o, err := d.GetClient(d.context, c.GetID())
+func (d *DatastoreManager) UpdateClient(ctx context.Context, c *client.Client) error {
+	o, err := d.GetConcreteClient(ctx, c.GetID())
 	if err != nil {
 		return errors.WithStack(err)
 	}
@@ -287,14 +286,14 @@ func (d *DatastoreManager) UpdateClient(c *client.Client) error {
 	key := d.createClientKey(s.ID)
 	mutation := datastore.NewUpdate(key, s)
 
-	if _, err := d.client.Mutate(d.context, mutation); err != nil {
+	if _, err := d.client.Mutate(ctx, mutation); err != nil {
 		return errors.WithStack(err)
 	}
 	return nil
 }
 
-func (d *DatastoreManager) Authenticate(id string, secret []byte) (*client.Client, error) {
-	c, err := d.GetConcreteClient(id)
+func (d *DatastoreManager) Authenticate(ctx context.Context, id string, secret []byte) (*client.Client, error) {
+	c, err := d.GetConcreteClient(ctx, id)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
@@ -306,7 +305,7 @@ func (d *DatastoreManager) Authenticate(id string, secret []byte) (*client.Clien
 	return c, nil
 }
 
-func (d *DatastoreManager) CreateClient(c *client.Client) error {
+func (d *DatastoreManager) CreateClient(ctx context.Context, c *client.Client) error {
 	h, err := d.hasher.Hash([]byte(c.Secret))
 	if err != nil {
 		return errors.WithStack(err)
@@ -320,28 +319,28 @@ func (d *DatastoreManager) CreateClient(c *client.Client) error {
 	key := d.createClientKey(data.ID)
 	mutation := datastore.NewInsert(key, data)
 
-	if _, err := d.client.Mutate(d.context, mutation); err != nil {
+	if _, err := d.client.Mutate(ctx, mutation); err != nil {
 		return errors.WithStack(err)
 	}
 	return nil
 }
 
-func (d *DatastoreManager) DeleteClient(id string) error {
+func (d *DatastoreManager) DeleteClient(ctx context.Context, id string) error {
 	key := d.createClientKey(id)
-	if err := d.client.Delete(d.context, key); err != nil {
+	if err := d.client.Delete(ctx, key); err != nil {
 		return errors.WithStack(err)
 	}
 	return nil
 }
 
 // This follows the implementation from the master branch
-func (d *DatastoreManager) GetClients(limit, offset int) (map[string]client.Client, error) {
+func (d *DatastoreManager) GetClients(ctx context.Context, limit, offset int) (map[string]client.Client, error) {
 	datas := make([]clientData, 0)
 	clients := make(map[string]client.Client)
 
 	query := d.newClientQuery().Order("__key__").Limit(limit).Offset(offset)
 
-	_, err := d.client.GetAll(d.context, query, &datas)
+	_, err := d.client.GetAll(ctx, query, &datas)
 
 	if err != nil {
 		return nil, errors.WithStack(err)
@@ -357,20 +356,3 @@ func (d *DatastoreManager) GetClients(limit, offset int) (map[string]client.Clie
 	}
 	return clients, nil
 }
-
-// Implementation for 0.11 branch
-// func (d *DatastoreManager) GetClients() (clients map[string]client.Client, err error) {
-// 	datas := make([]clientData, 0)
-// 	clients = make(map[string]client.Client)
-
-// 	query := d.newClientQuery().Order("__key__")
-
-// 	if _, err := d.client.GetAll(d.context, query, &datas); err != nil {
-// 		return nil, errors.WithStack(err)
-// 	}
-
-// 	for _, k := range datas {
-// 		clients[k.ID] = *k.toClient()
-// 	}
-// 	return clients, nil
-// }
