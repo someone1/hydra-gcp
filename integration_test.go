@@ -38,6 +38,8 @@ import (
 	"golang.org/x/oauth2/google"
 )
 
+var jConfig *gcpjwt.IAMConfig
+
 func generateGCPHydraHandler(t *testing.T) (context.Context, http.Handler, http.Handler) {
 	t.Helper()
 
@@ -65,12 +67,12 @@ func generateGCPHydraHandler(t *testing.T) (context.Context, http.Handler, http.
 		t.Fatalf("could not get jwt config: %v", err)
 	}
 	ctx := context.WithValue(context.Background(), goauth2.HTTPClient, http.DefaultClient)
-	config := &gcpjwt.IAMConfig{ServiceAccount: jwtConfig.Email}
+	jConfig = &gcpjwt.IAMConfig{ServiceAccount: jwtConfig.Email}
 
 	logger := c.GetLogger()
 	w := herodot.NewJSONWriter(logger)
 
-	f, b := GenerateIAMHydraHandler(ctx, c, config, w, false)
+	f, b := GenerateIAMHydraHandler(ctx, c, jConfig, w, false)
 
 	return ctx, f, b
 }
@@ -156,18 +158,13 @@ func TestIntegration(t *testing.T) {
 		defer func() {
 			client.CheckRedirect = nil
 		}()
-		jconfig, ok := gcpjwt.IAMFromContext(ctx)
-		if !ok {
-			t.Errorf("could not get JWT config from context")
-			return
-		}
 
 		for _, path := range []string{jwk.WellKnownKeysPath} {
 			_, err := client.Get(frontendts.URL + path)
 			if err == nil || !strings.Contains(err.Error(), errRedirect.Error()) {
 				t.Fatalf("could not get to endpoint %s due to error %v", path, err)
 			}
-			if want := fmt.Sprintf("https://www.googleapis.com/service_accounts/v1/jwk/%s", jconfig.ServiceAccount); lastRedirect != want {
+			if want := fmt.Sprintf("https://www.googleapis.com/service_accounts/v1/jwk/%s", jConfig.ServiceAccount); lastRedirect != want {
 				t.Errorf("wanted %s, got %s", want, lastRedirect)
 			}
 		}
