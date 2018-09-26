@@ -59,7 +59,7 @@ func newOAuth2Provider(ctxx context.Context, c *config.Config, jwtStrat jwk.JWTS
 		&compose.CommonStrategy{
 			CoreStrategy:               coreStrategy,
 			OpenIDConnectTokenStrategy: oidcStrategy,
-			JWTStrategy:                oidcStrategy.JWTStrategy,
+			JWTStrategy:                jwtStrat,
 		},
 		nil,
 		compose.OAuth2AuthorizeExplicitFactory,
