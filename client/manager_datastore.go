@@ -271,7 +271,7 @@ func (d *DatastoreManager) UpdateClient(ctx context.Context, c *client.Client) e
 	if c.Secret == "" {
 		c.Secret = string(o.GetHashedSecret())
 	} else {
-		h, err := d.hasher.Hash([]byte(c.Secret))
+		h, err := d.hasher.Hash(ctx, []byte(c.Secret))
 		if err != nil {
 			return errors.WithStack(err)
 		}
@@ -298,7 +298,7 @@ func (d *DatastoreManager) Authenticate(ctx context.Context, id string, secret [
 		return nil, errors.WithStack(err)
 	}
 
-	if err := d.hasher.Compare(c.GetHashedSecret(), secret); err != nil {
+	if err := d.hasher.Compare(ctx, c.GetHashedSecret(), secret); err != nil {
 		return nil, errors.WithStack(err)
 	}
 
@@ -306,7 +306,7 @@ func (d *DatastoreManager) Authenticate(ctx context.Context, id string, secret [
 }
 
 func (d *DatastoreManager) CreateClient(ctx context.Context, c *client.Client) error {
-	h, err := d.hasher.Hash([]byte(c.Secret))
+	h, err := d.hasher.Hash(ctx, []byte(c.Secret))
 	if err != nil {
 		return errors.WithStack(err)
 	}
