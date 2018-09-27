@@ -16,6 +16,7 @@ import (
 	"github.com/ory/hydra/consent"
 	"github.com/ory/hydra/jwk"
 	"github.com/ory/hydra/oauth2"
+	"go.opencensus.io/trace"
 
 	fgoauth2 "github.com/someone1/fosite-gcp-oauth2"
 )
@@ -23,6 +24,9 @@ import (
 func newOAuth2Provider(ctxx context.Context, c *config.Config, jwtStrat jwk.JWTStrategy) fosite.OAuth2Provider {
 	var ctx = c.Context()
 	var store = ctx.FositeStore
+	attrs := []trace.Attribute{trace.Int64Attribute("bcrypt.workfactor", int64(c.BCryptWorkFactor))}
+	hasher := NewTracedHasher(&fosite.BCrypt{WorkFactor: c.BCryptWorkFactor}, attrs)
+	ctx.Hasher = hasher
 
 	fc := &compose.Config{
 		AccessTokenLifespan:            c.GetAccessTokenLifespan(),
@@ -61,7 +65,7 @@ func newOAuth2Provider(ctxx context.Context, c *config.Config, jwtStrat jwk.JWTS
 			OpenIDConnectTokenStrategy: oidcStrategy,
 			JWTStrategy:                jwtStrat,
 		},
-		nil,
+		hasher,
 		compose.OAuth2AuthorizeExplicitFactory,
 		compose.OAuth2AuthorizeImplicitFactory,
 		compose.OAuth2ClientCredentialsGrantFactory,
