@@ -31,3 +31,4 @@ script:
   - make test-coverage
   - $GOPATH/bin/goveralls -coverprofile=coverage.out -service=travis-ci
   - make fmt vet build
+  - "./scripts/test-e2e-plugin.sh"

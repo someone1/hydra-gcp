@@ -13,13 +13,14 @@ First and foremost, Hydra is capable of being run on GCP **without** modificatio
 
 Well despite the JWT vs opaque token (arguable) con, you get some pros:
 
-- You can use the Access Tokens in conjuction with Cloud Endpoints! You don't have to use Firebase, Auth0, or Oauth2/OpenID providers such as Google. You can place hydra ontop of your existing user authentication systems and go from there.
 - You don't manage (creating, storing, rotating, etc.) access token keys/secrets! This is hard to get right so offloading this to a robust, battletested system goes a long way.
-- If you already leverage and utilize datastore, you don't need to add another database (MySQL/PostgreSQL)
+- If you already leverage and utilize datastore, you don't need to add another database (MySQL/PostgreSQL) - and this thing can SCALE
 
 ## Goals
 
 Try and make as FEW changes and copy as LITTLE as possible of the original Hydra bootstrap process. All we really want to do is plug in a different signing mechanism for access tokens and store configurations/sessions in datastore, everything else should work exactly as-is from within Hydra.
+
+### Interested in the datastore only? Check out how to [build the plugin](https://github.com/someone1/hydra-gcp/plugin)
 
 ## Usage
 
