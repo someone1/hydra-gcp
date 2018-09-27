@@ -34,6 +34,7 @@ import (
 
 	dclient "github.com/someone1/hydra-gcp/client"
 	dconsent "github.com/someone1/hydra-gcp/consent"
+	djwk "github.com/someone1/hydra-gcp/jwk"
 	"github.com/someone1/hydra-gcp/oauth2"
 )
 
@@ -96,8 +97,7 @@ func (d *DatastoreConnection) NewClientManager(hasher fosite.Hasher) client.Mana
 }
 
 func (d *DatastoreConnection) NewJWKManager(cipher *jwk.AEAD) jwk.Manager {
-	//TODO: Implement JWK
-	return &jwk.MemoryManager{}
+	return djwk.NewDatastoreManager(d.client, d.Namespace(), cipher)
 }
 
 func (d *DatastoreConnection) Prefixes() []string {
