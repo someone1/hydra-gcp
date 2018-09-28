@@ -20,7 +20,7 @@ Well despite the JWT vs opaque token (arguable) con, you get some pros:
 
 Try and make as FEW changes and copy as LITTLE as possible of the original Hydra bootstrap process. All we really want to do is plug in a different signing mechanism for access tokens and store configurations/sessions in datastore, everything else should work exactly as-is from within Hydra.
 
-### Interested in the datastore only? Check out how to [build the plugin](https://github.com/someone1/hydra-gcp/plugin)
+### Interested in the datastore only? Check out how to [build the plugin](https://github.com/someone1/hydra-gcp/tree/master/plugin)
 
 ## Usage
 
