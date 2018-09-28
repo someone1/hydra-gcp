@@ -40,7 +40,6 @@ const (
 	hydraOauth2RefreshKind  = "HydraOauth2Refresh"
 	hydraOauth2AuthCodeKind = "HydraOauth2Code"
 	hydraOauth2PKCEKind     = "HydraOauth2PKCE"
-	hydraOauth2AncestorName = "default"
 	oauth2Version           = 2
 )
 
@@ -156,20 +155,14 @@ func (f *FositeDatastoreStore) createPKCEKey(sig string) *datastore.Key {
 	return f.createKeyForKind(sig, hydraOauth2PKCEKind)
 }
 
-func (f *FositeDatastoreStore) createAncestorKeyForKind(kind string) *datastore.Key {
-	key := datastore.NameKey(kind, hydraOauth2AncestorName, nil)
-	key.Namespace = f.namespace
-	return key
-}
-
 func (f *FositeDatastoreStore) createKeyForKind(sig, kind string) *datastore.Key {
-	key := datastore.NameKey(kind, sig, f.createAncestorKeyForKind(kind))
+	key := datastore.NameKey(kind, sig, nil)
 	key.Namespace = f.namespace
 	return key
 }
 
 func (f *FositeDatastoreStore) newQueryForKind(kind string) *datastore.Query {
-	return datastore.NewQuery(kind).Ancestor(f.createAncestorKeyForKind(kind)).Namespace(f.namespace)
+	return datastore.NewQuery(kind).Namespace(f.namespace)
 }
 
 func oauth2DataFromRequest(signature string, r fosite.Requester, logger logrus.FieldLogger) (*hydraOauth2Data, error) {

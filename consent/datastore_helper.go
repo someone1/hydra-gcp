@@ -38,7 +38,6 @@ const (
 	hydraConsentAunthenticationRequestHandledKind   = "HydraConsentAuthenticationRequestHandled"
 	hydraConsentAunthenticationSessionKind          = "HydraConsentAuthenticationSession"
 	hydraConsentObfuscatedAuthenticationSessionKind = "HydraConsentObfuscatedAuthenticationSession"
-	hydraAncestorName                               = "default"
 	consentVersion                                  = 1
 	handleVersion                                   = 1
 	handleAuthVersion                               = 1

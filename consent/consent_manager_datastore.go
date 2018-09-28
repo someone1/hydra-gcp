@@ -45,20 +45,14 @@ type DatastoreManager struct {
 	store     pkg.FositeStorer
 }
 
-func (d *DatastoreManager) createAncestorKeyForKind(kind string) *datastore.Key {
-	key := datastore.NameKey(kind, hydraAncestorName, nil)
-	key.Namespace = d.namespace
-	return key
-}
-
 func (d *DatastoreManager) createKeyForKind(id, kind string) *datastore.Key {
-	key := datastore.NameKey(kind, id, d.createAncestorKeyForKind(kind))
+	key := datastore.NameKey(kind, id, nil)
 	key.Namespace = d.namespace
 	return key
 }
 
 func (d *DatastoreManager) newQueryForKind(kind string) *datastore.Query {
-	return datastore.NewQuery(kind).Ancestor(d.createAncestorKeyForKind(kind)).Namespace(d.namespace)
+	return datastore.NewQuery(kind).Namespace(d.namespace)
 }
 
 func (d *DatastoreManager) createConsentReqKey(id string) *datastore.Key {

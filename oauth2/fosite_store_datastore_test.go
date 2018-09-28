@@ -38,7 +38,6 @@ func TestHydraOauth2DataLoad(t *testing.T) {
 	t.Parallel()
 	if m, ok := fositeStores["datastore"].(*FositeDatastoreStore); ok {
 		key := m.createAccessKey("oauth2-upgrade-test")
-		key.Parent.Namespace = "upgrade-test"
 		key.Namespace = "upgrade-test"
 		mock := mockHydraOauth2Data{Version: 1, Active: false, Client: "foobar"}
 		if _, err := m.client.Put(context.Background(), key, &mock); err != nil {

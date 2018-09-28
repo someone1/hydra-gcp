@@ -38,10 +38,8 @@ var (
 )
 
 const (
-	hydraClientKind         = "HydraClient"
-	hydraClientAncestorKind = "HydraClientAncestor"
-	hydraClientAncestorName = "default"
-	hydraClientVersion      = 3
+	hydraClientKind    = "HydraClient"
+	hydraClientVersion = 3
 )
 
 type clientData struct {
@@ -148,20 +146,14 @@ func NewDatastoreManager(client *datastore.Client, namespace string, h fosite.Ha
 	}
 }
 
-func (d *DatastoreManager) clientAncestorKey() *datastore.Key {
-	key := datastore.NameKey(hydraClientAncestorKind, hydraClientAncestorName, nil)
-	key.Namespace = d.namespace
-	return key
-}
-
 func (d *DatastoreManager) createClientKey(id string) *datastore.Key {
-	key := datastore.NameKey(hydraClientKind, id, d.clientAncestorKey())
+	key := datastore.NameKey(hydraClientKind, id, nil)
 	key.Namespace = d.namespace
 	return key
 }
 
 func (d *DatastoreManager) newClientQuery() *datastore.Query {
-	return datastore.NewQuery(hydraClientKind).Ancestor(d.clientAncestorKey()).Namespace(d.namespace)
+	return datastore.NewQuery(hydraClientKind).Namespace(d.namespace)
 }
 
 func clientDataFromClient(d *client.Client) (*clientData, error) {
