@@ -21,6 +21,7 @@ install:
   - "$HOME/google-cloud-sdk/bin/gcloud components install cloud-datastore-emulator --quiet"
   - "$HOME/google-cloud-sdk/bin/gcloud config set project hyda-gcp-test --quiet"
   - make get
+  - go get -v -d -t github.com/ory/hydra
 
 before_script:
   - "$HOME/google-cloud-sdk/bin/gcloud beta emulators datastore start --quiet &"
