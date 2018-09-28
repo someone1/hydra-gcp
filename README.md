@@ -50,47 +50,62 @@ example:
 package main
 
 import (
+	"github.com/justinas/alice"
+	"github.com/ory/herodot"
 	"github.com/ory/hydra/config"
 	"github.com/someone1/gcp-jwt-go"
+	"github.com/someone1/hydra-gcp"
 	"google.golang.org/appengine"
-    //...
+	//...
 )
 func main() {
-    // You can set these up in an app.yaml if using AppEngine Flexible (STANDARD DOESN'T WORK!)
+	// You can set these up in an app.yaml if using AppEngine Flexible (STANDARD DOESN'T WORK!)
 	c := &config.Config{
 		DatabaseURL:               os.Getenv("DATABASE_URL"),
 		SystemSecret:              os.Getenv("SYSTEM_SECRET"),
 		CookieSecret:              os.Getenv("SYSTEM_SECRET"),
 		Issuer:                    os.Getenv("ISSUER"),
 		ConsentURL:                os.Getenv("CONSENT_URL"),
-		SubjectTypesSupported:     "public",
-		OAuth2AccessTokenStrategy: "jwt",
+		LoginURL:                  os.Getenv("LOGIN_URL"),
 		BCryptWorkFactor:          bcrypt.DefaultCost,
+		OAuth2AccessTokenStrategy: "jwt",
 		SubjectTypesSupported:     "public",
+		LogLevel:                  "info",
 		AccessTokenLifespan:       "5m",
-		AllowTLSTermination:       "0.0.0.0/0", // Might be a better option here?
+		AuthCodeLifespan:          "10m",
+		IDTokenLifespan:           "1h",
+		AllowTLSTermination:       "0.0.0.0/0",
 	}
 
 	if appengine.IsDevAppServer() {
 		c.ForceHTTP = true
 	}
 
-	ctx := gcp_jwt.NewContextJWT(context.Background(), &gcp_jwt.IAMSignJWTConfig{ServiceAccount: "<name>@<project>.iam.gserviceaccount.com"})
+	gcpconfig := &gcpjwt.IAMConfig{ServiceAccount: os.Getenv("API_SERVICE_ACCOUNT")}
+	ctx := context.Background()
 
 	logger := c.GetLogger()
 	w := herodot.NewJSONWriter(logger)
 
-	frontend, backend := hydragcp.GenerateHydraHandler(ctx, c, w, false)
+	frontend, backend := hydragcp.GenerateIAMHydraHandler(ctx, c, gcpconfig, w, true)
+	// Protect the backend with something like "github.com/someone1/gcp-jwt-go/jwtmiddleware"
 
-    combinedMux := http.NewServeMux()
+	// If we want to host both frontend and backend on the same port - PROTECT THE BACKEND!
+	combinedMux := http.NewServeMux()
 	combinedMux.Handle("/oauth2/", frontend)
-	combinedMux.Handle("/.well-known/", frontend)
+	combinedMux.Handle("/oauth2/auth/sessions/login/revoke", frontend)
+	combinedMux.Handle("/.well-known/", wellKnownCORSHandler(frontend)) // CORS issue w/ hydra, see #1028
 	combinedMux.Handle("/userinfo", frontend)
+	combinedMux.Handle(consent.LoginPath+"/", backend)
+	combinedMux.Handle(consent.ConsentPath+"/", backend)
+	combinedMux.Handle("/oauth2/auth/sessions/", backend)
+	combinedMux.Handle(oauth2.IntrospectPath, backend)
+	combinedMux.Handle(oauth2.FlushPath, backend)
 	combinedMux.Handle("/", backend)
 
 	http.Handle("/", combinedMux)
 
 
-	appengine.Main()
+	appengine.Main() // Or any graceful web server listening on port 8080
 }
 ```
