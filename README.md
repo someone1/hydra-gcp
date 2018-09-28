@@ -32,10 +32,17 @@ Onto the good part. There are two things you are responsible for providing to th
 4. Add the following to your Datastore indexes (index.yaml):
 
 ```yaml
-- kind: HydraOauth2Access
-  ancestor: yes
-  properties:
-    - name: rat
+indexes:
+  - kind: HydraOauth2Access
+    ancestor: yes
+    properties:
+      - name: rat
+
+  - kind: HydraJWK
+    ancestor: yes
+    properties:
+      - name: created_at
+        direction: desc
 ```
 
 That's about it. You can continue to use your own web framework so long as you're aware of the handlers already implemented by hydra (basically everything [here](https://www.ory.sh/docs/api/hydra). What's not supported:

@@ -1,0 +1,11 @@
+indexes:
+  - kind: HydraOauth2Access
+    ancestor: yes
+    properties:
+      - name: rat
+
+  - kind: HydraJWK
+    ancestor: yes
+    properties:
+      - name: created_at
+        direction: desc
