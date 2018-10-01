@@ -29,7 +29,7 @@ func main() {
 		BackendBindPort:           viper.GetInt("ADMIN_PORT"),
 		OAuth2AccessTokenStrategy: "jwt",
 		SubjectTypesSupported:     "public",
-		LogLevel:                  "info",
+		LogLevel:                  "debug",
 		AccessTokenLifespan:       "5m",
 		AuthCodeLifespan:          "10m",
 		IDTokenLifespan:           "1h",
