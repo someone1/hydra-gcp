@@ -28,7 +28,7 @@ import (
 	"github.com/ory/hydra/client"
 	"github.com/ory/hydra/consent"
 	"github.com/ory/hydra/pkg"
-	"github.com/ory/pagination"
+	"github.com/ory/x/pagination"
 	"github.com/pkg/errors"
 )
 
@@ -209,12 +209,24 @@ func (d *DatastoreManager) CreateConsentRequest(ctx context.Context, c *consent.
 
 func (d *DatastoreManager) GetConsentRequest(ctx context.Context, challenge string) (*consent.ConsentRequest, error) {
 	var c consentRequestData
+	var h handledConsentRequestData
 	key := d.createConsentReqKey(challenge)
+	hkey := d.createhandleConsentRequestKey(challenge)
 
-	if err := d.client.Get(ctx, key, &c); err == datastore.ErrNoSuchEntity {
-		return nil, errors.WithStack(pkg.ErrNotFound)
-	} else if err != nil {
-		return nil, errors.WithStack(err)
+	if err := d.client.GetMulti(ctx, []*datastore.Key{key, hkey}, []interface{}{&c, &h}); err != nil {
+		if me, ok := err.(datastore.MultiError); ok {
+			if me[0] == datastore.ErrNoSuchEntity {
+				return nil, errors.WithStack(pkg.ErrNotFound)
+			} else if me[0] == nil && me[1] == datastore.ErrNoSuchEntity {
+				c.WasHandled = false
+			} else {
+				return nil, errors.WithStack(me)
+			}
+		} else {
+			return nil, errors.WithStack(err)
+		}
+	} else {
+		c.WasHandled = h.WasUsed
 	}
 
 	if c.update {
@@ -250,12 +262,24 @@ func (d *DatastoreManager) CreateAuthenticationRequest(ctx context.Context, c *c
 
 func (d *DatastoreManager) GetAuthenticationRequest(ctx context.Context, challenge string) (*consent.AuthenticationRequest, error) {
 	var c consentRequestData
+	var h handledAuthenticationConsentRequestData
 	key := d.createConsentAuthReqKey(challenge)
+	hkey := d.createhandleConsentAuthenticationRequestKey(challenge)
 
-	if err := d.client.Get(ctx, key, &c); err == datastore.ErrNoSuchEntity {
-		return nil, errors.WithStack(pkg.ErrNotFound)
-	} else if err != nil {
-		return nil, errors.WithStack(err)
+	if err := d.client.GetMulti(ctx, []*datastore.Key{key, hkey}, []interface{}{&c, &h}); err != nil {
+		if me, ok := err.(datastore.MultiError); ok {
+			if me[0] == datastore.ErrNoSuchEntity {
+				return nil, errors.WithStack(pkg.ErrNotFound)
+			} else if me[0] == nil && me[1] == datastore.ErrNoSuchEntity {
+				c.WasHandled = false
+			} else {
+				return nil, errors.WithStack(me)
+			}
+		} else {
+			return nil, errors.WithStack(err)
+		}
+	} else {
+		c.WasHandled = h.WasUsed
 	}
 
 	if c.update {
@@ -311,7 +335,7 @@ func (d *DatastoreManager) VerifyAndInvalidateConsentRequest(ctx context.Context
 	}
 
 	if handledRequest.WasUsed {
-		return nil, errors.WithStack(fosite.ErrInvalidRequest.WithDebug("Consent verifier has been used already"))
+		return nil, errors.WithStack(fosite.ErrInvalidRequest.WithDebug("Authentication verifier has been used already"))
 	}
 
 	r, err := d.GetConsentRequest(ctx, consentRequest.Challenge)
@@ -426,7 +450,7 @@ func (d *DatastoreManager) FindPreviouslyGrantedConsentRequests(ctx context.Cont
 	var a []handledConsentRequestData
 	var consentReqs []consentRequestData
 
-	query := d.newQueryForKind(hydraConsentRequestKind).Filter("cid=", client).Filter("sub=", subject).Filter("skip=", false)
+	query := d.newQueryForKind(hydraConsentRequestKind).Filter("cid=", client).Filter("sub=", subject).Filter("skip=", false).Order("-ra").Limit(1)
 	_, err := d.client.GetAll(ctx, query, &consentReqs)
 	if err != nil {
 		return nil, errors.WithStack(err)
@@ -456,7 +480,7 @@ func (d *DatastoreManager) FindPreviouslyGrantedConsentRequestsByUser(ctx contex
 	var a []handledConsentRequestData
 	var consentReqs []consentRequestData
 
-	query := d.newQueryForKind(hydraConsentRequestKind).Filter("sub=", subject).Filter("skip=", false)
+	query := d.newQueryForKind(hydraConsentRequestKind).Filter("sub=", subject).Filter("skip=", false).Order("-ra")
 	_, err := d.client.GetAll(ctx, query, &consentReqs)
 	if err != nil {
 		return nil, errors.WithStack(err)

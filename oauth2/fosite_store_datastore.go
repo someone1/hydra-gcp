@@ -30,8 +30,11 @@ import (
 	"github.com/ory/fosite"
 	"github.com/ory/hydra/client"
 	"github.com/ory/hydra/pkg"
+	"github.com/ory/x/sqlcon"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -40,8 +43,11 @@ const (
 	hydraOauth2RefreshKind  = "HydraOauth2Refresh"
 	hydraOauth2AuthCodeKind = "HydraOauth2Code"
 	hydraOauth2PKCEKind     = "HydraOauth2PKCE"
+	uniqueTableKind         = "Unique"
 	oauth2Version           = 2
 )
+
+type uniqueConstraint struct{}
 
 var (
 	// TypeCheck
@@ -224,10 +230,23 @@ func (h *hydraOauth2Data) toRequest(session fosite.Session, cm client.Manager, l
 	return r, nil
 }
 
-func (f *FositeDatastoreStore) createSession(ctx context.Context, key *datastore.Key, requester fosite.Requester) error {
+func (f *FositeDatastoreStore) createSession(ctx context.Context, key *datastore.Key, requester fosite.Requester, unique bool) error {
 	data, err := oauth2DataFromRequest(key.Name, requester, f.L)
 	if err != nil {
 		return err
+	}
+
+	if unique {
+		// Unique Constraint for RequestID
+		uniqueKey := datastore.NameKey(uniqueTableKind, key.Kind+data.Request, nil)
+		uniqueMutation := datastore.NewInsert(uniqueKey, &uniqueConstraint{})
+		if _, err := f.client.Mutate(ctx, uniqueMutation); err != nil {
+			if got, want := status.Code(err), codes.AlreadyExists; got != want {
+				return errors.WithStack(err)
+			} else {
+				return sqlcon.ErrUniqueViolation
+			}
+		}
 	}
 
 	mutation := datastore.NewInsert(key, data)
@@ -290,7 +309,7 @@ func (f *FositeDatastoreStore) revokeSession(ctx context.Context, id, kind strin
 }
 
 func (f *FositeDatastoreStore) CreateOpenIDConnectSession(ctx context.Context, signature string, requester fosite.Requester) error {
-	return f.createSession(ctx, f.createOIDCKey(signature), requester)
+	return f.createSession(ctx, f.createOIDCKey(signature), requester, false)
 }
 
 func (f *FositeDatastoreStore) GetOpenIDConnectSession(ctx context.Context, signature string, requester fosite.Requester) (fosite.Requester, error) {
@@ -302,7 +321,7 @@ func (f *FositeDatastoreStore) DeleteOpenIDConnectSession(ctx context.Context, s
 }
 
 func (f *FositeDatastoreStore) CreateAuthorizeCodeSession(ctx context.Context, signature string, requester fosite.Requester) error {
-	return f.createSession(ctx, f.createCodeKey(signature), requester)
+	return f.createSession(ctx, f.createCodeKey(signature), requester, false)
 }
 
 func (f *FositeDatastoreStore) GetAuthorizeCodeSession(ctx context.Context, signature string, session fosite.Session) (fosite.Requester, error) {
@@ -334,7 +353,7 @@ func (f *FositeDatastoreStore) DeleteAuthorizeCodeSession(ctx context.Context, s
 }
 
 func (f *FositeDatastoreStore) CreateAccessTokenSession(ctx context.Context, signature string, requester fosite.Requester) error {
-	return f.createSession(ctx, f.createAccessKey(signature), requester)
+	return f.createSession(ctx, f.createAccessKey(signature), requester, true)
 }
 
 func (f *FositeDatastoreStore) GetAccessTokenSession(ctx context.Context, signature string, session fosite.Session) (fosite.Requester, error) {
@@ -346,7 +365,7 @@ func (f *FositeDatastoreStore) DeleteAccessTokenSession(ctx context.Context, sig
 }
 
 func (f *FositeDatastoreStore) CreateRefreshTokenSession(ctx context.Context, signature string, requester fosite.Requester) error {
-	return f.createSession(ctx, f.createRefreshKey(signature), requester)
+	return f.createSession(ctx, f.createRefreshKey(signature), requester, true)
 }
 
 func (f *FositeDatastoreStore) GetRefreshTokenSession(ctx context.Context, signature string, session fosite.Session) (fosite.Requester, error) {
@@ -358,7 +377,7 @@ func (f *FositeDatastoreStore) DeleteRefreshTokenSession(ctx context.Context, si
 }
 
 func (f *FositeDatastoreStore) CreatePKCERequestSession(ctx context.Context, signature string, requester fosite.Requester) error {
-	return f.createSession(ctx, f.createPKCEKey(signature), requester)
+	return f.createSession(ctx, f.createPKCEKey(signature), requester, false)
 }
 
 func (f *FositeDatastoreStore) GetPKCERequestSession(ctx context.Context, signature string, session fosite.Session) (fosite.Requester, error) {

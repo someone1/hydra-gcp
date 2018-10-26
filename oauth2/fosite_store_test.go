@@ -65,6 +65,17 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+func TestUniqueConstraints(t *testing.T) {
+	t.Parallel()
+	for storageType, store := range fositeStores {
+		if storageType == "memory" {
+			// memory store does not deal with unique constraints
+			continue
+		}
+		t.Run(fmt.Sprintf("case=%s", storageType), TestHelperUniqueConstraints(store, storageType))
+	}
+}
+
 func TestCreateGetDeleteAuthorizeCodes(t *testing.T) {
 	t.Parallel()
 	for k, m := range fositeStores {

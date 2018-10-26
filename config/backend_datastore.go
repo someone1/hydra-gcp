@@ -25,6 +25,7 @@ import (
 	"cloud.google.com/go/datastore"
 	"github.com/ory/fosite"
 	"github.com/ory/hydra/client"
+	"github.com/ory/hydra/config"
 	"github.com/ory/hydra/consent"
 	"github.com/ory/hydra/jwk"
 	"github.com/ory/hydra/pkg"
@@ -57,7 +58,7 @@ func (d *DatastoreConnection) Namespace() string {
 	return d.url.Query().Get("namespace")
 }
 
-func (d *DatastoreConnection) Init(urlStr string, l logrus.FieldLogger) error {
+func (d *DatastoreConnection) Init(urlStr string, l logrus.FieldLogger, _ ...config.ConnectorOptions) error {
 	ctx := context.Background()
 
 	URL, err := url.Parse(urlStr)

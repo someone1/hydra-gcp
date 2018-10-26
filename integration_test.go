@@ -26,10 +26,10 @@ import (
 
 	"github.com/ory/herodot"
 	"github.com/ory/hydra/config"
-	"github.com/ory/hydra/health"
 	"github.com/ory/hydra/jwk"
 	sdk "github.com/ory/hydra/sdk/go/hydra"
 	swagger "github.com/ory/hydra/sdk/go/hydra/swagger"
+	"github.com/ory/x/healthx"
 	"github.com/pkg/errors"
 	"github.com/someone1/gcp-jwt-go"
 	"golang.org/x/crypto/bcrypt"
@@ -110,7 +110,7 @@ func TestIntegration(t *testing.T) {
 
 	t.Run("Health", func(t *testing.T) {
 		for _, baseurl := range []string{backendts.URL} {
-			for _, path := range []string{health.ReadyCheckPath, health.AliveCheckPath} {
+			for _, path := range []string{healthx.ReadyCheckPath, healthx.AliveCheckPath} {
 				res, err := client.Get(baseurl + path)
 				if err != nil {
 					t.Fatalf("could not get to endpoint %s due to error %v", path, err)

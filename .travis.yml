@@ -2,7 +2,6 @@ language: go
 sudo: false
 
 go:
-  - 1.10.x
   - 1.11.x
 
 env:
@@ -20,11 +19,11 @@ install:
   - "$HOME/google-cloud-sdk/bin/gcloud components install beta --quiet"
   - "$HOME/google-cloud-sdk/bin/gcloud components install cloud-datastore-emulator --quiet"
   - "$HOME/google-cloud-sdk/bin/gcloud config set project hyda-gcp-test --quiet"
+  - export GO111MODULE="on"
   - make get
-  - go get -v -d -t github.com/ory/hydra
 
 before_script:
-  - "$HOME/google-cloud-sdk/bin/gcloud beta emulators datastore start --quiet &"
+  - "$HOME/google-cloud-sdk/bin/gcloud beta emulators datastore start --consistency=1 &"
   - sleep 15
   - "$($HOME/google-cloud-sdk/bin/gcloud beta emulators datastore env-init)"
 

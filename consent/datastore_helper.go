@@ -73,6 +73,7 @@ type authenticationRequest struct {
 	RequestedAt          time.Time      `datastore:"ra"`
 	OpenIDConnectContext string         `datastore:"oidcctx"`
 	LoginSessionID       string         `datastore:"lsi"`
+	WasHandled           bool           `datastore:"-"`
 
 	Version int `datastore:"v"`
 	update  bool
@@ -243,6 +244,9 @@ func (c *consentRequestData) toConsentRequest(client *client.Client) (*consent.C
 		AuthenticatedAt:        fromDateHack(c.AuthenticatedAt),
 		ForceSubjectIdentifier: c.ForcedSubjectIdentifier,
 		RequestedAt:            c.RequestedAt,
+		WasHandled:             c.WasHandled,
+		LoginSessionID:         c.LoginSessionID,
+		LoginChallenge:         c.LoginChallenge,
 	}, nil
 }
 
@@ -264,6 +268,8 @@ func (c *authenticationRequest) toAuthenticationRequest(client *client.Client) (
 		CSRF:                 c.CSRF,
 		AuthenticatedAt:      fromDateHack(c.AuthenticatedAt),
 		RequestedAt:          c.RequestedAt,
+		WasHandled:           c.WasHandled,
+		SessionID:            c.LoginSessionID,
 	}, nil
 }
 

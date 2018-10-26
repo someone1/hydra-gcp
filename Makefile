@@ -14,8 +14,6 @@ lint:
 
 get:
 	go get -v -d -t ./...
-	git -C ${GOPATH}/src/github.com/segmentio/analytics-go/ checkout --track origin/v3.0
-	git -C ${GOPATH}/src/github.com/ory/metrics-middleware checkout db3300574e48a229d5ddb1e30ea4adfd139d493a
 
 test:
 	go test ./...
