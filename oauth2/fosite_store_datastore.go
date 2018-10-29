@@ -30,11 +30,10 @@ import (
 	"github.com/ory/fosite"
 	"github.com/ory/hydra/client"
 	"github.com/ory/hydra/pkg"
-	"github.com/ory/x/sqlcon"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
+
+	"github.com/someone1/hydra-gcp/dscon"
 )
 
 const (
@@ -241,17 +240,13 @@ func (f *FositeDatastoreStore) createSession(ctx context.Context, key *datastore
 		uniqueKey := datastore.NameKey(uniqueTableKind, key.Kind+data.Request, nil)
 		uniqueMutation := datastore.NewInsert(uniqueKey, &uniqueConstraint{})
 		if _, err := f.client.Mutate(ctx, uniqueMutation); err != nil {
-			if got, want := status.Code(err), codes.AlreadyExists; got != want {
-				return errors.WithStack(err)
-			} else {
-				return sqlcon.ErrUniqueViolation
-			}
+			return dscon.HandleError(err)
 		}
 	}
 
 	mutation := datastore.NewInsert(key, data)
 	if _, err := f.client.Mutate(ctx, mutation); err != nil {
-		return errors.WithStack(err)
+		return dscon.HandleError(err)
 	}
 
 	return nil
@@ -260,10 +255,8 @@ func (f *FositeDatastoreStore) createSession(ctx context.Context, key *datastore
 func (f *FositeDatastoreStore) findSessionBySignature(ctx context.Context, key *datastore.Key, session fosite.Session) (fosite.Requester, error) {
 	var d hydraOauth2Data
 
-	if err := f.client.Get(ctx, key, &d); err == datastore.ErrNoSuchEntity {
-		return nil, errors.Wrap(fosite.ErrNotFound, "")
-	} else if err != nil {
-		return nil, errors.WithStack(err)
+	if err := f.client.Get(ctx, key, &d); err != nil {
+		return nil, dscon.HandleError(err)
 	} else if !d.Active && key.Kind == hydraOauth2AuthCodeKind {
 		if r, err := d.toRequest(session, f.Manager, f.L); err != nil {
 			return nil, err
@@ -287,7 +280,7 @@ func (f *FositeDatastoreStore) findSessionBySignature(ctx context.Context, key *
 
 func (f *FositeDatastoreStore) deleteSession(ctx context.Context, key *datastore.Key) error {
 	if err := f.client.Delete(ctx, key); err != nil {
-		return errors.WithStack(err)
+		return dscon.HandleError(err)
 	}
 
 	return nil
@@ -296,14 +289,14 @@ func (f *FositeDatastoreStore) deleteSession(ctx context.Context, key *datastore
 func (f *FositeDatastoreStore) revokeSession(ctx context.Context, id, kind string) error {
 	query := f.newQueryForKind(kind).Filter("rid=", id).KeysOnly()
 	keys, err := f.client.GetAll(ctx, query, nil)
-	if err == datastore.ErrNoSuchEntity {
+	if err != nil {
+		return dscon.HandleError(err)
+	}
+	if len(keys) == 0 {
 		return errors.Wrap(fosite.ErrNotFound, "")
 	}
-	if err != nil {
-		return errors.WithStack(err)
-	}
 	if err = f.client.DeleteMulti(ctx, keys); err != nil {
-		return errors.WithStack(err)
+		return dscon.HandleError(err)
 	}
 	return nil
 }
@@ -333,16 +326,13 @@ func (f *FositeDatastoreStore) InvalidateAuthorizeCodeSession(ctx context.Contex
 	key := f.createCodeKey(signature)
 
 	err := f.client.Get(ctx, key, &data)
-	if err == datastore.ErrNoSuchEntity {
-		return nil
-	} else if err != nil {
-		return errors.WithStack(err)
+	if err != nil {
+		return dscon.HandleError(err)
 	}
-
 	data.Active = false
 	mutation := datastore.NewUpdate(key, &data)
 	if _, err := f.client.Mutate(ctx, mutation); err != nil {
-		return errors.WithStack(err)
+		return dscon.HandleError(err)
 	}
 
 	return nil
@@ -411,7 +401,7 @@ func (f *FositeDatastoreStore) FlushInactiveAccessTokens(ctx context.Context, no
 
 	keys, err := f.client.GetAll(ctx, query, nil)
 	if err != nil {
-		return errors.WithStack(err)
+		return dscon.HandleError(err)
 	}
 
 	if err = f.client.DeleteMulti(ctx, keys); err != nil {

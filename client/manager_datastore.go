@@ -30,6 +30,8 @@ import (
 	"github.com/pkg/errors"
 	"gopkg.in/square/go-jose.v2"
 	"gopkg.in/square/go-jose.v2/json"
+
+	"github.com/someone1/hydra-gcp/dscon"
 )
 
 var (
@@ -233,10 +235,8 @@ func (d *DatastoreManager) GetConcreteClient(ctx context.Context, id string) (*c
 	var cd clientData
 	key := d.createClientKey(id)
 
-	if err := d.client.Get(ctx, key, &cd); err == datastore.ErrNoSuchEntity {
-		return nil, errors.Errorf("Unable to find client %s", id)
-	} else if err != nil {
-		return nil, errors.WithStack(err)
+	if err := d.client.Get(ctx, key, &cd); err != nil {
+		return nil, dscon.HandleError(err)
 	}
 
 	if cd.update {
@@ -279,7 +279,7 @@ func (d *DatastoreManager) UpdateClient(ctx context.Context, c *client.Client) e
 	mutation := datastore.NewUpdate(key, s)
 
 	if _, err := d.client.Mutate(ctx, mutation); err != nil {
-		return errors.WithStack(err)
+		return dscon.HandleError(err)
 	}
 	return nil
 }
@@ -312,7 +312,7 @@ func (d *DatastoreManager) CreateClient(ctx context.Context, c *client.Client) e
 	mutation := datastore.NewInsert(key, data)
 
 	if _, err := d.client.Mutate(ctx, mutation); err != nil {
-		return errors.WithStack(err)
+		return dscon.HandleError(err)
 	}
 	return nil
 }
@@ -320,7 +320,7 @@ func (d *DatastoreManager) CreateClient(ctx context.Context, c *client.Client) e
 func (d *DatastoreManager) DeleteClient(ctx context.Context, id string) error {
 	key := d.createClientKey(id)
 	if err := d.client.Delete(ctx, key); err != nil {
-		return errors.WithStack(err)
+		return dscon.HandleError(err)
 	}
 	return nil
 }
@@ -335,7 +335,7 @@ func (d *DatastoreManager) GetClients(ctx context.Context, limit, offset int) (m
 	_, err := d.client.GetAll(ctx, query, &datas)
 
 	if err != nil {
-		return nil, errors.WithStack(err)
+		return nil, dscon.HandleError(err)
 	}
 
 	for _, k := range datas {
