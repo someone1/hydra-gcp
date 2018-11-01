@@ -13,11 +13,7 @@ func HandleError(err error) error {
 		return errors.Wrap(sqlcon.ErrUniqueViolation, got.String())
 	}
 
-	if got, want := status.Code(err), codes.NotFound; got == want {
-		return errors.WithStack(sqlcon.ErrNoRows)
-	}
-
-	if err == datastore.ErrNoSuchEntity {
+	if got, want := status.Code(err), codes.NotFound; got == want || err == datastore.ErrNoSuchEntity {
 		return errors.WithStack(sqlcon.ErrNoRows)
 	}
 

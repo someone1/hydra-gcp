@@ -235,17 +235,18 @@ func (f *FositeDatastoreStore) createSession(ctx context.Context, key *datastore
 		return err
 	}
 
+	mutations := []*datastore.Mutation{datastore.NewInsert(key, data)}
 	if unique {
 		// Unique Constraint for RequestID
-		uniqueKey := datastore.NameKey(uniqueTableKind, key.Kind+data.Request, nil)
-		uniqueMutation := datastore.NewInsert(uniqueKey, &uniqueConstraint{})
-		if _, err := f.client.Mutate(ctx, uniqueMutation); err != nil {
-			return dscon.HandleError(err)
-		}
+		uniqueKey := f.createKeyForKind(uniqueTableKind, key.Kind+data.Request)
+		mutations = append(mutations, datastore.NewInsert(uniqueKey, &uniqueConstraint{}))
 	}
 
-	mutation := datastore.NewInsert(key, data)
-	if _, err := f.client.Mutate(ctx, mutation); err != nil {
+	_, err = f.client.RunInTransaction(ctx, func(t *datastore.Transaction) error {
+		_, terr := t.Mutate(mutations...)
+		return terr
+	})
+	if err != nil {
 		return dscon.HandleError(err)
 	}
 
@@ -256,6 +257,9 @@ func (f *FositeDatastoreStore) findSessionBySignature(ctx context.Context, key *
 	var d hydraOauth2Data
 
 	if err := f.client.Get(ctx, key, &d); err != nil {
+		if err == datastore.ErrNoSuchEntity {
+			return nil, errors.Wrap(fosite.ErrNotFound, "")
+		}
 		return nil, dscon.HandleError(err)
 	} else if !d.Active && key.Kind == hydraOauth2AuthCodeKind {
 		if r, err := d.toRequest(session, f.Manager, f.L); err != nil {
@@ -278,8 +282,22 @@ func (f *FositeDatastoreStore) findSessionBySignature(ctx context.Context, key *
 	return d.toRequest(session, f.Manager, f.L)
 }
 
-func (f *FositeDatastoreStore) deleteSession(ctx context.Context, key *datastore.Key) error {
-	if err := f.client.Delete(ctx, key); err != nil {
+func (f *FositeDatastoreStore) deleteSession(ctx context.Context, key *datastore.Key, unique bool) error {
+	mutations := []*datastore.Mutation{datastore.NewDelete(key)}
+	_, err := f.client.RunInTransaction(ctx, func(t *datastore.Transaction) error {
+		if unique {
+			var data hydraOauth2Data
+			if err := t.Get(key, &data); err != nil {
+				return err
+			}
+			mutations = append(mutations, datastore.NewDelete(f.createKeyForKind(uniqueTableKind, key.Kind+data.Request)))
+		}
+
+		_, terr := t.Mutate(mutations...)
+		return terr
+	})
+
+	if err != nil {
 		return dscon.HandleError(err)
 	}
 
@@ -295,7 +313,16 @@ func (f *FositeDatastoreStore) revokeSession(ctx context.Context, id, kind strin
 	if len(keys) == 0 {
 		return errors.Wrap(fosite.ErrNotFound, "")
 	}
-	if err = f.client.DeleteMulti(ctx, keys); err != nil {
+	mutations := make([]*datastore.Mutation, 0, len(keys)*2)
+	for _, key := range keys {
+		mutations = append(mutations, datastore.NewDelete(key))
+		mutations = append(mutations, datastore.NewDelete(f.createKeyForKind(uniqueTableKind, key.Kind+id)))
+	}
+	_, err = f.client.RunInTransaction(ctx, func(t *datastore.Transaction) error {
+		_, terr := t.Mutate(mutations...)
+		return terr
+	})
+	if err != nil {
 		return dscon.HandleError(err)
 	}
 	return nil
@@ -310,7 +337,7 @@ func (f *FositeDatastoreStore) GetOpenIDConnectSession(ctx context.Context, sign
 }
 
 func (f *FositeDatastoreStore) DeleteOpenIDConnectSession(ctx context.Context, signature string) error {
-	return f.deleteSession(ctx, f.createOIDCKey(signature))
+	return f.deleteSession(ctx, f.createOIDCKey(signature), false)
 }
 
 func (f *FositeDatastoreStore) CreateAuthorizeCodeSession(ctx context.Context, signature string, requester fosite.Requester) error {
@@ -339,7 +366,7 @@ func (f *FositeDatastoreStore) InvalidateAuthorizeCodeSession(ctx context.Contex
 }
 
 func (f *FositeDatastoreStore) DeleteAuthorizeCodeSession(ctx context.Context, signature string) error {
-	return f.deleteSession(ctx, f.createCodeKey(signature))
+	return f.deleteSession(ctx, f.createCodeKey(signature), false)
 }
 
 func (f *FositeDatastoreStore) CreateAccessTokenSession(ctx context.Context, signature string, requester fosite.Requester) error {
@@ -351,7 +378,7 @@ func (f *FositeDatastoreStore) GetAccessTokenSession(ctx context.Context, signat
 }
 
 func (f *FositeDatastoreStore) DeleteAccessTokenSession(ctx context.Context, signature string) error {
-	return f.deleteSession(ctx, f.createAccessKey(signature))
+	return f.deleteSession(ctx, f.createAccessKey(signature), true)
 }
 
 func (f *FositeDatastoreStore) CreateRefreshTokenSession(ctx context.Context, signature string, requester fosite.Requester) error {
@@ -363,7 +390,7 @@ func (f *FositeDatastoreStore) GetRefreshTokenSession(ctx context.Context, signa
 }
 
 func (f *FositeDatastoreStore) DeleteRefreshTokenSession(ctx context.Context, signature string) error {
-	return f.deleteSession(ctx, f.createRefreshKey(signature))
+	return f.deleteSession(ctx, f.createRefreshKey(signature), true)
 }
 
 func (f *FositeDatastoreStore) CreatePKCERequestSession(ctx context.Context, signature string, requester fosite.Requester) error {
@@ -375,7 +402,7 @@ func (f *FositeDatastoreStore) GetPKCERequestSession(ctx context.Context, signat
 }
 
 func (f *FositeDatastoreStore) DeletePKCERequestSession(ctx context.Context, signature string) error {
-	return f.deleteSession(ctx, f.createPKCEKey(signature))
+	return f.deleteSession(ctx, f.createPKCEKey(signature), false)
 }
 
 func (f *FositeDatastoreStore) CreateImplicitAccessTokenSession(ctx context.Context, signature string, requester fosite.Requester) error {

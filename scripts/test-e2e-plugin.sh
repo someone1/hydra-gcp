@@ -16,6 +16,7 @@ export OAUTH2_ISSUER_URL=http://127.0.0.1:4444/
 export LOG_LEVEL=debug
 export REDIRECT_URL=http://127.0.0.1:5555/callback
 export OAUTH2_SCOPE=openid,offline
+export OAUTH2_ACCESS_TOKEN_STRATEGY=jwt
 
 go install github.com/ory/hydra
 go install github.com/ory/hydra/test/mock-client
@@ -29,7 +30,6 @@ DATABASE_URL=datastore://hydra-plugin-test \
     OAUTH2_LOGIN_URL=http://127.0.0.1:3000/login \
     OAUTH2_ERROR_URL=http://127.0.0.1:3000/error \
     OAUTH2_SHARE_ERROR_DEBUG=true \
-    OAUTH2_ACCESS_TOKEN_STRATEGY=jwt \
     hydra serve all --dangerous-force-http --disable-telemetry &
 
 PORT=3000 mock-lcp &
